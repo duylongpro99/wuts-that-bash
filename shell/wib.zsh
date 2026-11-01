@@ -322,7 +322,8 @@ _wib_preexec() {
 _wib_precmd() {
   local st=$?
   [[ -n $_wib_cmd ]] || return 0
-  "$_wib_bin" record --ts $_wib_cmd_ts --exit $st --cwd "$PWD" -- "$_wib_cmd" &>/dev/null &!
+  "$_wib_bin" record --ts $_wib_cmd_ts --exit $st --cwd "$PWD" --period "${WIB_PERIOD:-30d}" \
+    -- "$_wib_cmd" &>/dev/null &!
   _wib_cmd=''
   return 0
 }

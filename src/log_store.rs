@@ -4,10 +4,17 @@
 use crate::entry::Entry;
 use std::fs::{self, OpenOptions};
 use std::io::{self, Read, Seek, SeekFrom, Write};
-use std::os::unix::fs::{DirBuilderExt, OpenOptionsExt, PermissionsExt};
+use std::os::unix::fs::{DirBuilderExt, MetadataExt, OpenOptionsExt, PermissionsExt};
 use std::path::{Path, PathBuf};
 
 pub const LOG_FILE: &str = "history.tsv";
+const LOCK_FILE: &str = "history.lock";
+
+/// Compaction waits until the oldest entry is this much past the cutoff, so the
+/// log is rewritten about once a day rather than after every command.
+const COMPACT_SLACK: i64 = 86_400;
+/// How much of the log is read to find the oldest entry's timestamp.
+const HEAD_BYTES: u64 = 4_096;
 
 /// `$WIB_DATA_DIR`, else `$XDG_DATA_HOME/wib`, else `~/.local/share/wib`.
 pub fn data_dir() -> PathBuf {
@@ -106,10 +113,16 @@ pub fn should_record(cmd: &str) -> bool {
     !cmd.trim().is_empty() && !cmd.starts_with(' ')
 }
 
-/// Append one entry with a single write so concurrent shells don't interleave lines.
+/// Append one entry with a single write, holding the log lock so concurrent
+/// shells neither interleave lines nor lose them to a compaction. With
+/// `keep_since`, entries older than it are then dropped once the oldest is more
+/// than `COMPACT_SLACK` past it; a failed compaction leaves the log as it was.
 /// The log holds command lines, so it is private to the user (0700 dir, 0600 file).
-pub fn append(dir: &Path, e: &Entry) -> io::Result<()> {
+pub fn append(dir: &Path, e: &Entry, keep_since: Option<i64>) -> io::Result<()> {
     fs::DirBuilder::new().recursive(true).mode(0o700).create(dir)?;
+    // Without a lock (a filesystem that cannot lock, a lock file owned by
+    // another user) still record the command, but skip the rewrite.
+    let lock = lock(dir).ok();
     let mut f = OpenOptions::new()
         .create(true)
         .append(true)
@@ -127,7 +140,83 @@ pub fn append(dir: &Path, e: &Entry) -> io::Result<()> {
     if ends_without_newline(&mut f)? {
         line.insert(0, '\n');
     }
-    f.write_all(line.as_bytes())
+    f.write_all(line.as_bytes())?;
+    drop(f);
+    if let (Some(cutoff), Some(_held)) = (keep_since, &lock) {
+        let _ = compact_if_stale(dir, cutoff);
+    }
+    Ok(())
+}
+
+/// Exclusive lock shared by every writer. It lives in its own file because
+/// compaction replaces `history.tsv`, and a lock on the replaced file would no
+/// longer keep a waiting writer from appending to it. Released on drop.
+fn lock(dir: &Path) -> io::Result<fs::File> {
+    let f = OpenOptions::new()
+        .create(true)
+        .write(true)
+        .truncate(false)
+        .mode(0o600)
+        .open(dir.join(LOCK_FILE))?;
+    f.lock()?;
+    Ok(f)
+}
+
+fn line_ts(line: &[u8]) -> Option<i64> {
+    let tab = line.iter().position(|&b| b == b'\t')?;
+    std::str::from_utf8(&line[..tab]).ok()?.parse().ok()
+}
+
+/// Drop entries older than `cutoff`, keeping the others byte for byte. Callers
+/// hold the log lock. The new log is written beside the old one and renamed
+/// over it, so a concurrent reader sees either the old or the new log.
+fn compact_if_stale(dir: &Path, cutoff: i64) -> io::Result<()> {
+    let path = dir.join(LOG_FILE);
+    let mut head = Vec::new();
+    fs::File::open(&path)?.take(HEAD_BYTES).read_to_end(&mut head)?;
+    // Commands are appended in order, so the first entry is the oldest. If the
+    // head holds no complete entry, fall through and let the full pass decide.
+    let oldest = head.split(|&b| b == b'\n').find_map(line_ts);
+    if oldest.is_some_and(|ts| ts >= cutoff.saturating_sub(COMPACT_SLACK)) {
+        return Ok(());
+    }
+
+    let raw = fs::read(&path)?;
+    let mut kept = Vec::with_capacity(raw.len());
+    let mut dropped = false;
+    for line in raw.split(|&b| b == b'\n').filter(|l| !l.is_empty()) {
+        if line_ts(line).is_some_and(|ts| ts >= cutoff) {
+            kept.extend_from_slice(line);
+            kept.push(b'\n');
+        } else {
+            dropped = true;
+        }
+    }
+    if !dropped {
+        return Ok(());
+    }
+
+    let owner = fs::metadata(&path)?;
+    let tmp = dir.join(format!("{LOG_FILE}.tmp"));
+    let written = (|| {
+        let mut f = OpenOptions::new()
+            .create(true)
+            .write(true)
+            .truncate(true)
+            .mode(0o600)
+            .open(&tmp)?;
+        // Keep the log's owner: a root shell sharing $HOME must not leave the
+        // user a log they can no longer write. Fails, and so skips, for anyone
+        // but the owner or root.
+        std::os::unix::fs::fchown(&f, Some(owner.uid()), Some(owner.gid()))?;
+        f.write_all(&kept)?;
+        f.sync_all()?;
+        fs::rename(&tmp, &path)
+    })();
+    if written.is_err() {
+        let _ = fs::remove_file(&tmp);
+    }
+    written
 }
 
 fn ends_without_newline(f: &mut fs::File) -> io::Result<bool> {
@@ -183,8 +272,8 @@ mod tests {
     fn appends_and_loads() {
         let dir = std::env::temp_dir().join(format!("wib-test-{}", std::process::id()));
         let _ = fs::remove_dir_all(&dir);
-        append(&dir, &entry(1, "one")).unwrap();
-        append(&dir, &entry(2, "two")).unwrap();
+        append(&dir, &entry(1, "one"), None).unwrap();
+        append(&dir, &entry(2, "two"), None).unwrap();
         let loaded = load(&dir);
         assert_eq!(loaded.iter().map(|e| e.cmd.as_str()).collect::<Vec<_>>(), ["one", "two"]);
         let file_mode = fs::metadata(dir.join(LOG_FILE)).unwrap().permissions().mode() & 0o777;
@@ -200,7 +289,7 @@ mod tests {
         fs::create_dir_all(&dir).unwrap();
         fs::write(dir.join(LOG_FILE), "").unwrap();
         fs::set_permissions(dir.join(LOG_FILE), fs::Permissions::from_mode(0o644)).unwrap();
-        append(&dir, &entry(1, "x")).unwrap();
+        append(&dir, &entry(1, "x"), None).unwrap();
         let mode = fs::metadata(dir.join(LOG_FILE)).unwrap().permissions().mode() & 0o777;
         assert_eq!(mode, 0o600);
         fs::remove_dir_all(&dir).unwrap();
@@ -212,9 +301,64 @@ mod tests {
         let _ = fs::remove_dir_all(&dir);
         fs::create_dir_all(&dir).unwrap();
         fs::write(dir.join(LOG_FILE), "1\t0\t/\tcut sho").unwrap();
-        append(&dir, &entry(2, "next")).unwrap();
+        append(&dir, &entry(2, "next"), None).unwrap();
         let cmds: Vec<String> = load(&dir).into_iter().map(|e| e.cmd).collect();
         assert_eq!(cmds, ["cut sho", "next"]);
+        fs::remove_dir_all(&dir).unwrap();
+    }
+
+    fn fresh_dir(name: &str) -> std::path::PathBuf {
+        let dir = std::env::temp_dir().join(format!("wib-{name}-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+        dir
+    }
+
+    #[test]
+    fn compaction_drops_old_entries_and_keeps_others_verbatim() {
+        let dir = fresh_dir("compact");
+        let day = 86_400;
+        let text = format!(
+            "{}\t0\t/\told\nbroken line\n{}\t1\t/tmp/a\\tb\tprintf 'x\\ny'\n{}\t\t\tnew\n",
+            10 * day,
+            40 * day,
+            41 * day
+        );
+        fs::write(dir.join(LOG_FILE), &text).unwrap();
+        fs::set_permissions(dir.join(LOG_FILE), fs::Permissions::from_mode(0o600)).unwrap();
+        append(&dir, &entry(42 * day, "latest"), Some(30 * day)).unwrap();
+        let raw = fs::read_to_string(dir.join(LOG_FILE)).unwrap();
+        let expected_tail = format_line(&entry(42 * day, "latest"));
+        assert_eq!(
+            raw,
+            format!("{}\t1\t/tmp/a\\tb\tprintf 'x\\ny'\n{}\t\t\tnew\n{expected_tail}", 40 * day, 41 * day)
+        );
+        let mode = fs::metadata(dir.join(LOG_FILE)).unwrap().permissions().mode() & 0o777;
+        assert_eq!(mode, 0o600);
+        assert!(!dir.join(format!("{LOG_FILE}.tmp")).exists());
+        fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn compaction_waits_for_the_slack() {
+        let dir = fresh_dir("slack");
+        let day = 86_400;
+        // The oldest entry is past the cutoff, but by less than a day.
+        append(&dir, &entry(29 * day + 10, "slightly old"), None).unwrap();
+        let before = fs::read_to_string(dir.join(LOG_FILE)).unwrap();
+        compact_if_stale(&dir, 30 * day).unwrap();
+        assert_eq!(fs::read_to_string(dir.join(LOG_FILE)).unwrap(), before);
+        compact_if_stale(&dir, 31 * day).unwrap();
+        assert_eq!(fs::read_to_string(dir.join(LOG_FILE)).unwrap(), "");
+        fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn no_compaction_without_a_period() {
+        let dir = fresh_dir("noperiod");
+        append(&dir, &entry(1, "ancient"), None).unwrap();
+        append(&dir, &entry(2, "also ancient"), None).unwrap();
+        assert_eq!(load(&dir).len(), 2);
         fs::remove_dir_all(&dir).unwrap();
     }
 }

@@ -5,8 +5,9 @@
 //!   Prints matching commands best-first. Default output is one command per
 //!   line with embedded newlines shown as `\n` (for humans). With `-0`, each
 //!   command is printed verbatim and terminated by NUL; the zsh widget uses this.
-//! - `wib record --ts <unix> --exit <code> --cwd <dir> -- <cmd>`
+//! - `wib record --ts <unix> --exit <code> --cwd <dir> [--period 30d] -- <cmd>`
 //!   Appends a command to wib's own log (ignored if it starts with a space).
+//!   With `--period`, entries older than the period are dropped from the log.
 //! - `wib init zsh`  Prints the zsh integration script for `eval`.
 
 mod entry;
@@ -32,7 +33,7 @@ wib - suggest previously used commands from zsh history
 
 Usage:
   wib query [--period 30d] [--limit 8] [-0] -- <input>
-  wib record --ts <unix> --exit <code> --cwd <dir> -- <command>
+  wib record --ts <unix> --exit <code> --cwd <dir> [--period 30d] -- <command>
   wib init zsh
 
 Setup: add `eval \"$(wib init zsh)\"` to ~/.zshrc
@@ -125,8 +126,8 @@ fn load_entries(period_secs: i64, now: i64) -> Vec<Entry> {
     let mut entries = log_store::load(&log_store::data_dir());
     entries.retain(|e| e.ts >= cutoff);
     let own: HashSet<(&str, i64)> = entries.iter().map(|e| (e.cmd.as_str(), e.ts)).collect();
-    let from_zsh: Vec<Entry> = match std::fs::read(zsh_history_path()) {
-        Ok(raw) => zsh_history::parse_since(&raw, cutoff)
+    let from_zsh: Vec<Entry> = match zsh_history::read_since(&zsh_history_path(), cutoff) {
+        Ok(found) => found
             .into_iter()
             .filter(|e| !(e.ts - 1..=e.ts + 1).any(|ts| own.contains(&(e.cmd.as_str(), ts))))
             .collect(),
@@ -165,7 +166,7 @@ fn cmd_query(args: &[String]) -> Result<(), String> {
 }
 
 fn cmd_record(args: &[String]) -> Result<(), String> {
-    let a = Args::parse(args, &["--ts", "--exit", "--cwd"], &[])?;
+    let a = Args::parse(args, &["--ts", "--exit", "--cwd", "--period"], &[])?;
     let cmd = a.rest.join(" ");
     if !log_store::should_record(&cmd) {
         return Ok(());
@@ -180,7 +181,14 @@ fn cmd_record(args: &[String]) -> Result<(), String> {
         cwd: a.value("--cwd").map(str::to_string),
         exit: a.value("--exit").and_then(|v| v.parse().ok()),
     };
-    log_store::append(&log_store::data_dir(), &entry).map_err(|e| format!("cannot write log: {e}"))
+    // A bad --period must not lose the command; it only skips the cleanup.
+    let now = now();
+    let keep_since = a
+        .value("--period")
+        .and_then(|p| parse_period(p).ok())
+        .map(|secs| now.saturating_sub(secs));
+    log_store::append(&log_store::data_dir(), &entry, keep_since)
+        .map_err(|e| format!("cannot write log: {e}"))
 }
 
 fn cmd_init(args: &[String]) -> Result<(), String> {

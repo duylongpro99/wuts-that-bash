@@ -135,3 +135,71 @@ fn init_zsh_embeds_binary_path() {
     assert!(out.starts_with("typeset -g _wib_bin='/"));
     assert!(out.contains("_wib_pre_redraw"));
 }
+
+fn log_lines(sb: &Sandbox) -> Vec<String> {
+    let log = fs::read_to_string(sb.data().join("data/history.tsv")).unwrap_or_default();
+    log.lines().map(str::to_string).collect()
+}
+
+fn record(sb: &Sandbox, ts: i64, cmd: &str, period: Option<&str>) -> i32 {
+    let ts = ts.to_string();
+    let mut args = vec!["record", "--ts", &ts, "--exit", "0", "--cwd", "/"];
+    if let Some(p) = period {
+        args.extend(["--period", p]);
+    }
+    args.extend(["--", cmd]);
+    sb.wib(&args).1
+}
+
+#[test]
+fn record_with_period_drops_old_log_entries() {
+    let sb = Sandbox::new("compact", &[]);
+    let n = now();
+    for cmd in ["old a", "old b", "old c"] {
+        record(&sb, n - 40 * DAY, cmd, None);
+    }
+    assert_eq!(log_lines(&sb).len(), 3);
+    assert_eq!(record(&sb, n, "fresh", Some("30d")), 0);
+    let lines = log_lines(&sb);
+    assert_eq!(lines.len(), 1);
+    assert!(lines[0].ends_with("\tfresh"));
+}
+
+#[test]
+fn record_without_valid_period_keeps_old_entries() {
+    let sb = Sandbox::new("keep", &[]);
+    let n = now();
+    record(&sb, n - 40 * DAY, "old", None);
+    assert_eq!(record(&sb, n, "no period", None), 0);
+    assert_eq!(record(&sb, n, "bad period", Some("7x")), 0);
+    assert_eq!(record(&sb, n, "huge period", Some("9999999999999999d")), 0);
+    assert_eq!(log_lines(&sb).len(), 4);
+}
+
+#[test]
+fn concurrent_records_lose_nothing_while_compacting() {
+    let sb = Sandbox::new("concurrent", &[]);
+    let n = now();
+    for i in 0..50 {
+        record(&sb, n - 40 * DAY, &format!("old {i}"), None);
+    }
+    std::thread::scope(|s| {
+        for w in 0..4 {
+            let sb = &sb;
+            s.spawn(move || {
+                for i in 0..200 {
+                    assert_eq!(record(sb, n, &format!("w{w} cmd {i}"), Some("30d")), 0);
+                }
+            });
+        }
+    });
+    let lines = log_lines(&sb);
+    assert_eq!(lines.len(), 800, "every new command kept, every old one dropped");
+    for line in &lines {
+        assert_eq!(line.split('\t').count(), 4, "malformed line: {line:?}");
+    }
+    let mut cmds: Vec<&str> = lines.iter().map(|l| l.rsplit('\t').next().unwrap()).collect();
+    cmds.sort_unstable();
+    cmds.dedup();
+    assert_eq!(cmds.len(), 800);
+}
