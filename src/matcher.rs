@@ -89,13 +89,79 @@ fn fold(c: char, case_sensitive: bool) -> char {
     }
 }
 
+fn is_separator(c: char) -> bool {
+    matches!(
+        c,
+        ' ' | '\t' | '\n' | '-' | '/' | '_' | '.' | ':' | '=' | '@' | ',' | '"' | '\'' | '('
+            | '[' | '{' | '$' | '|' | ';' | '&' | '<' | '>'
+    )
+}
+
 fn is_boundary(text: &[char], i: usize) -> bool {
-    i == 0
-        || matches!(
-            text[i - 1],
-            ' ' | '\t' | '\n' | '-' | '/' | '_' | '.' | ':' | '=' | '@' | ',' | '"' | '\'' | '('
-                | '[' | '{' | '$' | '|' | ';' | '&' | '<' | '>'
-        )
+    i == 0 || is_separator(text[i - 1])
+}
+
+/// Keyword search: every keyword must occur somewhere in the command, in any
+/// order. Keywords are separated by commas or whitespace.
+pub struct KeywordPattern {
+    keywords: Vec<Vec<char>>,
+    case_sensitive: bool,
+}
+
+const WHOLE_WORD: i32 = 3;
+const WORD_START: i32 = 2;
+const MID_WORD: i32 = 1;
+
+impl KeywordPattern {
+    /// Smart case, as in `Pattern`: any uppercase letter makes the search case-sensitive.
+    pub fn new(input: &str) -> Self {
+        let case_sensitive = input.chars().any(char::is_uppercase);
+        let keywords = input
+            .split(|c: char| c == ',' || c.is_whitespace())
+            .filter(|k| !k.is_empty())
+            .map(|k| k.chars().map(|c| fold(c, case_sensitive)).collect())
+            .collect();
+        KeywordPattern { keywords, case_sensitive }
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.keywords.is_empty()
+    }
+
+    /// Score is the sum over keywords of their best occurrence: a whole word
+    /// beats a word start, which beats a match inside a word. There is a single
+    /// tier in keyword search, so every match uses `Tier::Prefix`.
+    pub fn matches(&self, cmd: &str) -> Option<Match> {
+        if self.keywords.is_empty() {
+            return None;
+        }
+        let text: Vec<char> = cmd.chars().map(|c| fold(c, self.case_sensitive)).collect();
+        let mut score = 0;
+        for kw in &self.keywords {
+            score += best_occurrence(kw, &text)?;
+        }
+        Some(Match { tier: Tier::Prefix, score })
+    }
+}
+
+fn best_occurrence(kw: &[char], text: &[char]) -> Option<i32> {
+    if kw.len() > text.len() {
+        return None;
+    }
+    let mut best = None;
+    for i in 0..=text.len() - kw.len() {
+        if text[i..i + kw.len()] != *kw {
+            continue;
+        }
+        let end = i + kw.len();
+        let s = match (is_boundary(text, i), end == text.len() || is_separator(text[end])) {
+            (true, true) => return Some(WHOLE_WORD),
+            (true, false) => WORD_START,
+            _ => MID_WORD,
+        };
+        best = best.max(Some(s));
+    }
+    best
 }
 
 const CONSECUTIVE: i32 = 10;
@@ -220,6 +286,55 @@ mod tests {
         assert!(m("qqqz", &long).is_some());
         assert!(m("qqqy", &long).is_none());
         assert!(started.elapsed().as_millis() < 20, "took {:?}", started.elapsed());
+    }
+
+    fn k(input: &str, cmd: &str) -> Option<i32> {
+        KeywordPattern::new(input).matches(cmd).map(|m| m.score)
+    }
+
+    #[test]
+    fn keywords_match_in_any_order() {
+        let cmd = "git pull origin master";
+        assert!(k("pull", cmd).is_some());
+        assert!(k("pull,master", cmd).is_some());
+        assert!(k("master pull", cmd).is_some());
+        assert!(k("master, pull", cmd).is_some());
+        assert_eq!(k("pull,main", cmd), None);
+        assert!(k("8080", "docker run -p8080:80 nginx").is_some());
+    }
+
+    #[test]
+    fn empty_keywords_match_nothing() {
+        assert!(KeywordPattern::new(" , ,").is_empty());
+        assert_eq!(k(",", "anything"), None);
+        assert_eq!(k("", "anything"), None);
+    }
+
+    #[test]
+    fn whole_word_beats_word_start_beats_mid_word() {
+        let whole = k("pull", "git pull").unwrap();
+        let start = k("pull", "git pullrequest").unwrap();
+        let mid = k("ull", "git pull").unwrap();
+        assert!(whole > start && start > mid, "{whole} {start} {mid}");
+        // The best occurrence counts, not the first.
+        assert_eq!(k("pull", "xpull pull"), Some(whole));
+        // A separator after the keyword still ends the word.
+        assert_eq!(k("pull", "gh pull-request"), Some(whole));
+    }
+
+    #[test]
+    fn keywords_smart_case() {
+        assert!(k("pull", "GIT PULL").is_some());
+        assert_eq!(k("Pull", "git pull"), None);
+        assert!(k("Pull", "git Pull").is_some());
+    }
+
+    #[test]
+    fn keywords_stay_fast_on_long_commands() {
+        let long = format!("echo {}z", "q".repeat(40_000));
+        let started = std::time::Instant::now();
+        assert_eq!(k("qqqqqqqqqy", &long), None);
+        assert!(started.elapsed().as_millis() < 50, "took {:?}", started.elapsed());
     }
 
     #[test]

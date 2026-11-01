@@ -1,10 +1,14 @@
 //! wib — suggest previously used shell commands while typing in zsh.
 //!
 //! Subcommands:
-//! - `wib query [--period 30d] [--limit 8] [-0] -- <input>`
+//! - `wib <keywords>` / `wib -- <keywords>`
+//!   Prints commands containing every keyword (comma or space separated, any
+//!   order), best-first. Period and limit come from `WIB_PERIOD` / `WIB_LIMIT`.
+//! - `wib query [--period 30d] [--limit 8] [--keywords] [-0] -- <input>`
 //!   Prints matching commands best-first. Default output is one command per
 //!   line with embedded newlines shown as `\n` (for humans). With `-0`, each
 //!   command is printed verbatim and terminated by NUL; the zsh widget uses this.
+//!   With `--keywords`, `<input>` is a keyword search as above.
 //! - `wib record --ts <unix> --exit <code> --cwd <dir> [--period 30d] -- <cmd>`
 //!   Appends a command to wib's own log (ignored if it starts with a space).
 //!   With `--period`, entries older than the period are dropped from the log.
@@ -32,7 +36,9 @@ const USAGE: &str = "\
 wib - suggest previously used commands from zsh history
 
 Usage:
-  wib query [--period 30d] [--limit 8] [-0] -- <input>
+  wib <keywords>                  e.g. `wib pull,master` or `wib master pull`
+  wib -- <keywords>               when a keyword is also a command name (init, query, ...)
+  wib query [--period 30d] [--limit 8] [--keywords] [-0] -- <input>
   wib record --ts <unix> --exit <code> --cwd <dir> [--period 30d] -- <command>
   wib init zsh
 
@@ -56,7 +62,9 @@ fn main() -> ExitCode {
             println!("{USAGE}");
             Ok(())
         }
-        Some(other) => Err(format!("unknown command '{other}'\n\n{USAGE}")),
+        Some("--") => cmd_keywords(&args[1..]),
+        Some(other) if other.starts_with('-') => Err(format!("unknown option '{other}'\n\n{USAGE}")),
+        Some(_) => cmd_keywords(&args),
     };
     match result {
         Ok(()) => ExitCode::SUCCESS,
@@ -138,8 +146,29 @@ fn load_entries(period_secs: i64, now: i64) -> Vec<Entry> {
     entries
 }
 
+/// `wib <keywords>`: a keyword query with period and limit from the environment.
+fn cmd_keywords(keywords: &[String]) -> Result<(), String> {
+    let input = keywords.join(" ");
+    if input.split(|c: char| c == ',' || c.is_whitespace()).all(str::is_empty) {
+        return Err(format!("no keywords given\n\n{USAGE}"));
+    }
+    let env = |name: &str, default: &str| {
+        std::env::var(name).ok().filter(|v| !v.is_empty()).unwrap_or_else(|| default.to_string())
+    };
+    let args = [
+        "--keywords".to_string(),
+        "--period".to_string(),
+        env("WIB_PERIOD", DEFAULT_PERIOD),
+        "--limit".to_string(),
+        env("WIB_LIMIT", &DEFAULT_LIMIT.to_string()),
+        "--".to_string(),
+        input,
+    ];
+    cmd_query(&args)
+}
+
 fn cmd_query(args: &[String]) -> Result<(), String> {
-    let a = Args::parse(args, &["--period", "--limit"], &["-0"])?;
+    let a = Args::parse(args, &["--period", "--limit"], &["-0", "--keywords"])?;
     let period = parse_period(a.value("--period").unwrap_or(DEFAULT_PERIOD))?;
     let limit = match a.value("--limit") {
         Some(v) => v.parse().map_err(|_| format!("invalid --limit '{v}'"))?,
@@ -148,7 +177,11 @@ fn cmd_query(args: &[String]) -> Result<(), String> {
     let input = a.rest.join(" ");
     let now = now();
     let entries = load_entries(period, now);
-    let results = rank::rank(&entries, &input, now, limit);
+    let results = if a.has("--keywords") {
+        rank::rank_keywords(&entries, &input, now, limit)
+    } else {
+        rank::rank(&entries, &input, now, limit)
+    };
 
     let mut out = io::BufWriter::new(io::stdout().lock());
     for cmd in results {
