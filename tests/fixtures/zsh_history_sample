@@ -1,0 +1,8 @@
+: 1700000000:0;git status
+: 1700000010:0;git push origin master
+not an entry
+: 1700000020:0;echo "xin chÃƒ€o"
+: 1700000030:0;for f in *.log; do\
+  wc -l $f\
+done
+: 1700000040:2;docker compose up -d
