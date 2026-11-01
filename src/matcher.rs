@@ -1,4 +1,9 @@
-//! Match a typed input against a command: prefix first, then fuzzy subsequence.
+//! Match a typed input against a command: prefix first, then word-start fuzzy.
+//!
+//! Fuzzy matching only accepts a command when the input splits into chunks that
+//! each start a word of the command, in order (`dcup` → `d`ocker `c`ompose `up`).
+//! A plain subsequence match is too loose: any long command contains the letters
+//! of a short input somewhere, which floods the list with unrelated commands.
 
 /// Lower tier sorts first.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
@@ -14,9 +19,13 @@ pub struct Match {
     pub score: i32,
 }
 
-/// Input chars, pre-folded once per query.
+/// Input, pre-folded once per query.
 pub struct Pattern {
+    /// The whole input, for the prefix test.
     chars: Vec<char>,
+    /// Non-whitespace input chars; `true` when whitespace preceded the char in
+    /// the input, so it must start a new word.
+    fuzzy: Vec<(char, bool)>,
     case_sensitive: bool,
 }
 
@@ -24,16 +33,26 @@ impl Pattern {
     /// Smart case: an input containing an uppercase letter matches case-sensitively.
     pub fn new(input: &str) -> Self {
         let case_sensitive = input.chars().any(char::is_uppercase);
-        let chars = input.chars().map(|c| fold(c, case_sensitive)).collect();
-        Pattern { chars, case_sensitive }
+        let chars: Vec<char> = input.chars().map(|c| fold(c, case_sensitive)).collect();
+        let mut fuzzy = Vec::with_capacity(chars.len());
+        let mut after_space = false;
+        for &c in &chars {
+            if c.is_whitespace() {
+                after_space = true;
+            } else {
+                fuzzy.push((c, after_space));
+                after_space = false;
+            }
+        }
+        Pattern { chars, fuzzy, case_sensitive }
     }
 
     pub fn is_empty(&self) -> bool {
-        self.chars.is_empty()
+        self.fuzzy.is_empty()
     }
 
     pub fn matches(&self, cmd: &str) -> Option<Match> {
-        if self.chars.is_empty() {
+        if self.fuzzy.is_empty() {
             return None;
         }
         // Cheap prefix test first: the common case for typed commands.
@@ -46,25 +65,18 @@ impl Pattern {
             return Some(Match { tier: Tier::Prefix, score: 0 });
         }
         let folded: Vec<char> = cmd.chars().map(|c| fold(c, self.case_sensitive)).collect();
-        let latest = latest_starts(&self.chars, &folded)?;
-        let boundary_first = score_path(&self.chars, &folded, &latest, true);
-        let earliest = score_path(&self.chars, &folded, &latest, false);
-        Some(Match { tier: Tier::Fuzzy, score: boundary_first.max(earliest) })
+        // Linear subsequence check rejects most commands before the scoring pass.
+        if !is_subsequence(&self.fuzzy, &folded) {
+            return None;
+        }
+        let score = word_start_score(&self.fuzzy, &folded)?;
+        Some(Match { tier: Tier::Fuzzy, score })
     }
 }
 
-/// For each pattern index `pi`, the largest text index where `pat[pi]` can be
-/// matched while `pat[pi + 1..]` still fits after it. None if `pat` is not a
-/// subsequence of `text`. One backward pass, so matching stays linear.
-fn latest_starts(pat: &[char], text: &[char]) -> Option<Vec<usize>> {
-    let mut latest = vec![0; pat.len()];
-    let mut end = text.len();
-    for (pi, &p) in pat.iter().enumerate().rev() {
-        let i = text[..end].iter().rposition(|&c| c == p)?;
-        latest[pi] = i;
-        end = i;
-    }
-    Some(latest)
+fn is_subsequence(pat: &[(char, bool)], text: &[char]) -> bool {
+    let mut it = text.iter();
+    pat.iter().all(|&(p, _)| it.any(|&c| c == p))
 }
 
 fn fold(c: char, case_sensitive: bool) -> char {
@@ -78,44 +90,62 @@ fn fold(c: char, case_sensitive: bool) -> char {
 }
 
 fn is_boundary(text: &[char], i: usize) -> bool {
-    i == 0 || matches!(text[i - 1], ' ' | '-' | '/' | '_' | '.' | ':' | '=' | '@' | ',')
+    i == 0
+        || matches!(
+            text[i - 1],
+            ' ' | '\t' | '\n' | '-' | '/' | '_' | '.' | ':' | '=' | '@' | ',' | '"' | '\'' | '('
+                | '[' | '{' | '$' | '|' | ';' | '&' | '<' | '>'
+        )
 }
 
-/// Walk the pattern through `text`, never past `latest[pi]` so the rest of the
-/// pattern always fits. With `prefer_boundary`, each pattern char takes the
-/// next occurrence at a word start when one exists, which makes initials like
-/// `dcup` land on `d`ocker `c`ompose `u`p.
-fn score_path(pat: &[char], text: &[char], latest: &[usize], prefer_boundary: bool) -> i32 {
-    const BOUNDARY: i32 = 10;
-    const CONSECUTIVE: i32 = 6;
-    const FIRST_CHAR: i32 = 8;
-    let mut score = 0;
-    let mut pos = 0usize;
-    let mut prev: Option<usize> = None;
-    for (pi, &p) in pat.iter().enumerate() {
-        let window = pos..=latest[pi];
-        let boundary = if prefer_boundary {
-            window.clone().find(|&i| text[i] == p && is_boundary(text, i))
-        } else {
-            None
-        };
-        // `latest[pi]` itself matches `p`, so the window always yields an index.
-        let i = boundary.unwrap_or_else(|| window.clone().find(|&i| text[i] == p).unwrap_or(latest[pi]));
-        if is_boundary(text, i) {
-            score += BOUNDARY;
-        }
-        if i == 0 {
-            score += FIRST_CHAR;
-        }
-        match prev {
-            Some(pr) if pr + 1 == i => score += CONSECUTIVE,
-            Some(pr) => score -= ((i - pr - 1) as i32).min(10),
-            None => score -= (i as i32).min(10),
-        }
-        prev = Some(i);
-        pos = i + 1;
+const CONSECUTIVE: i32 = 10;
+const FIRST_CHAR: i32 = 8;
+const NONE: i32 = i32::MIN;
+
+/// Best score for placing the pattern so each char either directly follows the
+/// previous matched char or starts a word; a char typed after whitespace must
+/// start a word. Rewards consecutive chars and penalises skipped words.
+/// One row per pattern char, so the cost is O(pattern × text).
+fn word_start_score(pat: &[(char, bool)], text: &[char]) -> Option<i32> {
+    let n = text.len();
+    // words_before[j] = word starts in text[..j].
+    let mut words_before = vec![0i32; n + 1];
+    for j in 0..n {
+        words_before[j + 1] = words_before[j] + is_boundary(text, j) as i32;
     }
-    score
+    let mut prev = vec![NONE; n];
+    let mut cur = vec![NONE; n];
+    for (pi, &(p, must_start)) in pat.iter().enumerate() {
+        // Max over k < j of prev[k] + words_before[k + 1], so a jump from k to j
+        // costs the number of word starts strictly between them.
+        let mut best_before = NONE;
+        for j in 0..n {
+            if j > 0 && prev[j - 1] != NONE {
+                best_before = best_before.max(prev[j - 1] + words_before[j]);
+            }
+            cur[j] = NONE;
+            if text[j] != p {
+                continue;
+            }
+            let start = is_boundary(text, j);
+            if pi == 0 {
+                if start {
+                    cur[j] = if j == 0 { FIRST_CHAR } else { -words_before[j] };
+                }
+                continue;
+            }
+            let mut s = NONE;
+            if !must_start && j > 0 && prev[j - 1] != NONE {
+                s = prev[j - 1] + CONSECUTIVE;
+            }
+            if start && best_before != NONE {
+                s = s.max(best_before - words_before[j]);
+            }
+            cur[j] = s;
+        }
+        std::mem::swap(&mut prev, &mut cur);
+    }
+    prev.into_iter().filter(|&s| s != NONE).max()
 }
 
 #[cfg(test)]
@@ -136,13 +166,35 @@ mod tests {
     fn initials_match_fuzzily() {
         let r = m("dcup", "docker compose up").unwrap();
         assert_eq!(r.tier, Tier::Fuzzy);
+        assert!(m("gpom", "git push origin master").is_some());
+        assert!(m("compose", "docker compose up").is_some());
+        assert!(m("gi st", "git status").is_some());
     }
 
     #[test]
-    fn initials_score_higher_than_scattered_letters() {
-        let initials = m("dcup", "docker compose up").unwrap().score;
-        let scattered = m("dcup", "xdxcxuxp").unwrap().score;
-        assert!(initials > scattered, "{initials} <= {scattered}");
+    fn letters_inside_words_do_not_match() {
+        assert_eq!(m("dcup", "xdxcxuxp"), None);
+        // Every letter of "git status" appears in order, but never at word starts.
+        let long = "touch google-sa-dev.json user-oauth-token.json client_secret_123.json \
+                    eval/runs/baseline-single-pass-translate1 eval/runs/baseline-contextual";
+        assert!(is_subsequence(&Pattern::new("git status").fuzzy, &long.chars().collect::<Vec<_>>()));
+        assert_eq!(m("git status", long), None);
+    }
+
+    #[test]
+    fn space_in_input_starts_a_new_word() {
+        assert!(m("do up", "docker compose up").is_some());
+        assert_eq!(m("dock erc", "docker compose up"), None);
+    }
+
+    #[test]
+    fn fewer_skipped_words_score_higher() {
+        let close = m("dc", "docker compose up").unwrap().score;
+        let far = m("dc", "docker run --rm alpine compose").unwrap().score;
+        assert!(close > far, "{close} <= {far}");
+        let whole_word = m("push", "git push origin").unwrap().score;
+        let initials = m("push", "p u s h").unwrap().score;
+        assert!(whole_word > initials, "{whole_word} <= {initials}");
     }
 
     #[test]
@@ -150,6 +202,7 @@ mod tests {
         assert_eq!(m("xyz", "docker compose up"), None);
         assert_eq!(m("pud", "docker compose up"), None);
         assert_eq!(m("", "anything"), None);
+        assert_eq!(m("  ", "anything"), None);
     }
 
     #[test]
@@ -161,9 +214,11 @@ mod tests {
 
     #[test]
     fn long_commands_stay_fast() {
-        let long = format!("echo aq z{}", " q".repeat(20_000));
+        // Every word starts with `q`, so every position is a candidate.
+        let long = format!("echo {}qz", "q ".repeat(20_000));
         let started = std::time::Instant::now();
-        assert!(m("qz", &long).is_some());
+        assert!(m("qqqz", &long).is_some());
+        assert!(m("qqqy", &long).is_none());
         assert!(started.elapsed().as_millis() < 20, "took {:?}", started.elapsed());
     }
 
