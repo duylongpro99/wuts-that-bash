@@ -1,7 +1,19 @@
+<div align="center">
+
 # wib — what is that bash?
 
-Gợi ý lại các lệnh bạn đã dùng gần đây ngay khi gõ trên zsh. Gõ từ 2 ký tự trở lên, một danh sách
-lệnh khớp (trong 30 ngày gần nhất, mặc định) hiện ngay dưới prompt và lọc lại theo từng phím.
+**Your shell history, surfaced the moment you start typing.**
+
+Stop digging through Ctrl-R. Stop retyping that 80-character `docker run`.
+Type two letters and the command you ran last Tuesday is already under your cursor.
+
+![Rust](https://img.shields.io/badge/built%20with-Rust-orange?logo=rust)
+![zsh](https://img.shields.io/badge/shell-zsh%20%E2%89%A5%205.3-blue)
+![No daemon](https://img.shields.io/badge/daemon-none-success)
+![Local only](https://img.shields.io/badge/data-100%25%20local-success)
+![License: MIT](https://img.shields.io/badge/license-MIT-lightgrey)
+
+</div>
 
 ```text
 PROMPT> gi
@@ -10,83 +22,116 @@ PROMPT> gi
   git commit -m "fix bug"
 ```
 
-- Khớp tiền tố trước, rồi khớp mờ theo đầu từ (`dcup` → `docker compose up`, `gi st` → `git status`).
-  Mỗi đoạn bạn gõ phải là phần đầu của một từ trong lệnh; chữ cái nằm rải rác giữa các từ không được tính.
-- Xếp hạng theo số lần dùng và độ gần đây; lệnh trùng chỉ hiện một lần.
-- Một binary Rust nhỏ, không daemon; mỗi lần tra cứu mất khoảng 5–8ms trên ~10k lệnh.
-- Dữ liệu chỉ nằm trên máy bạn.
+---
 
-## Vì sao chọn wib
+## The 30-second pitch
 
-- **Gợi ý tự hiện, không cần gọi.** Ctrl-R, fzf hay atuin bắt bạn nhớ ra là cần tìm rồi bấm phím mở
-  màn hình tìm kiếm. wib hiện danh sách ngay khi bạn gõ và lọc lại sau từng phím.
-- **Thấy nhiều lựa chọn cùng lúc.** zsh-autosuggestions chỉ đưa một gợi ý xám; wib hiện tối đa 8 dòng
-  (đổi được qua `WIB_LIMIT`), nên bạn nhận ra đúng lệnh khi nhìn thấy nó, kể cả khi không nhớ cách viết.
-- **Gõ ít mà vẫn ra đúng lệnh.** Khớp theo đầu từ (`dcup`, `gi st`), và Shift+Tab điền từng từ để lấy
-  lệnh cũ làm khung rồi sửa phần cuối.
-- **Không phá thói quen đang có.** ↑, Tab, Enter, Ctrl-R giữ nguyên hành vi; phím chỉ đổi nghĩa khi bạn
-  bấm ↓ để chọn một dòng. Chạy cùng oh-my-zsh, powerlevel10k, zsh-autosuggestions và vi mode. Lịch sử
-  cũ trong `~/.zsh_history` dùng được ngay.
-- **Nhanh, nhẹ, riêng tư.** Một binary, không daemon, không database server, không cloud hay telemetry.
-  Log để quyền 0600 và bỏ qua lệnh khớp `HISTORY_IGNORE`. Gỡ ra chỉ cần xoá một dòng và một thư mục.
+You already know the command. You ran it yesterday. You just can't remember whether it was
+`--force-with-lease` or `-f`, which port you mapped, or the exact path to that config file.
 
-| | Cách gọi | Số gợi ý | Đồng bộ nhiều máy |
+Today you either press Ctrl-R and play guess-the-substring, or you scroll up through hundreds of
+lines with ↑. **wib shows you the answer before you ask.** Type `gi` and you see your recent `git` commands.
+Type `dcup` and you get `docker compose up`. Press ↓ and Enter and it runs.
+
+- ⚡ **Instant**: about 5–8 ms per lookup on ~10k commands, including process startup.
+- 🧠 **Smart matching**: prefix first, then word-initial fuzzy (`gi st` → `git status`).
+- 🎯 **Ranked by you**: frequent and recent commands rise to the top, and duplicates collapse to one line.
+- 🪶 **Featherweight**: one small Rust binary with zero dependencies, no daemon, no database server.
+- 🔒 **Private by design**: no cloud, no telemetry, the log is owner-only (0600), and it respects `HISTORY_IGNORE`.
+- 🤝 **Plays nice**: works with oh-my-zsh, powerlevel10k, zsh-autosuggestions and vi mode.
+- 🔁 **Works on day one**: your existing `~/.zsh_history` powers suggestions immediately.
+
+```sh
+git clone https://github.com/duylongpro99/wuts-that-bash.git && cd wuts-that-bash
+cargo install --path . && echo 'eval "$(wib init zsh)"' >> ~/.zshrc
+```
+
+Open a new terminal. That's it.
+
+---
+
+## How it matches
+
+- Prefix matches come first, then fuzzy matching on word starts (`dcup` → `docker compose up`,
+  `gi st` → `git status`). Each chunk you type must be the start of a word in the command; letters
+  scattered across the middle of words don't count.
+- Results are ranked by how often and how recently you used them; duplicate commands appear once.
+- Suggestions come from the last 30 days by default (see `WIB_PERIOD`).
+- Your data never leaves your machine.
+
+## Why wib
+
+- **Suggestions appear on their own.** Ctrl-R, fzf and atuin make you realize you need to search,
+  then press a key to open a search screen. wib shows the list as you type and refines it with every keystroke.
+- **See many options at once.** zsh-autosuggestions offers a single grey hint; wib shows up to 8 lines
+  (configurable with `WIB_LIMIT`), so you recognize the right command when you see it, even if you
+  couldn't recall how to spell it.
+- **Type less, still land on the right command.** Word-initial matching (`dcup`, `gi st`) plus
+  Shift+Tab word-by-word fill lets you reuse an old command as a template and edit only the end.
+- **Doesn't break your habits.** ↑, Tab, Enter and Ctrl-R behave exactly as before; keys only change
+  meaning after you press ↓ to select a line. Runs alongside oh-my-zsh, powerlevel10k,
+  zsh-autosuggestions and vi mode. Your existing `~/.zsh_history` works right away.
+- **Fast, light, private.** One binary, no daemon, no database server, no cloud, no telemetry.
+  The log is mode 0600 and skips commands matching `HISTORY_IGNORE`. Uninstalling takes one line and one directory.
+
+| | How you invoke it | Suggestions | Multi-machine sync |
 |---|---|---|---|
-| **wib** | Tự hiện khi gõ | Nhiều dòng, ngay dưới prompt | Không, chỉ local |
-| zsh-autosuggestions | Tự hiện khi gõ | Một gợi ý xám | Không |
-| Ctrl-R / fzf | Bấm phím để mở | Danh sách tìm kiếm | Không |
-| atuin | Bấm phím để mở | Danh sách tìm kiếm | Có |
+| **wib** | Appears as you type | Several lines, right under the prompt | No, local only |
+| zsh-autosuggestions | Appears as you type | One grey hint | No |
+| Ctrl-R / fzf | Press a key to open | Search list | No |
+| atuin | Press a key to open | Search list | Yes |
 
-## Cài đặt
+## Installation
 
-Cần zsh ≥ 5.3 và Rust ≥ 1.89.
+Requires zsh ≥ 5.3 and Rust ≥ 1.89.
 
 ```sh
 cargo install --path .
 ```
 
-Thêm vào **cuối** `~/.zshrc` (sau oh-my-zsh và các plugin khác):
+Add this to the **end** of `~/.zshrc` (after oh-my-zsh and other plugins):
 
 ```zsh
 eval "$(wib init zsh)"
 ```
 
-Mở terminal mới là dùng được. Lịch sử cũ trong `~/.zsh_history` có tác dụng ngay từ đầu.
+Open a new terminal and you're done. Your existing `~/.zsh_history` takes effect from the start.
 
-## Phím tắt
+## Key bindings
 
-Danh sách có hai chế độ: **đang gõ** (danh sách hiện, chưa chọn dòng nào) và **đang chọn** (một dòng được tô sáng).
+The list has two modes: **typing** (list visible, no line selected) and **selecting** (one line highlighted).
 
-| Phím | Khi đang gõ | Khi đang chọn |
-|------|-------------|---------------|
-| ↓ | Bắt đầu chọn, từ dòng đầu | Xuống dòng dưới (cuối thì quay về đầu) |
-| ↑ | History của zsh như cũ | Lên dòng trên (dòng đầu thì quay về gõ) |
-| Tab | Tab completion của zsh như cũ | Điền cả lệnh, chưa chạy |
-| Shift+Tab | Điền từng từ của dòng đầu danh sách | Điền từng từ của dòng đang chọn |
-| Space | Gõ dấu cách | Quay về gõ, không thêm dấu cách, danh sách vẫn hiện |
-| Enter | Chạy dòng đang gõ | Điền lệnh đang chọn và chạy luôn |
-| Esc / Ctrl-G | Ẩn danh sách đến khi bạn gõ tiếp | Như bên trái |
+| Key | While typing | While selecting |
+|-----|--------------|-----------------|
+| ↓ | Start selecting, from the first line | Move down (wraps to the top at the end) |
+| ↑ | zsh history, as usual | Move up (from the first line, back to typing) |
+| Tab | zsh tab completion, as usual | Fill in the whole command without running it |
+| Shift+Tab | Fill the first suggestion word by word | Fill the selected line word by word |
+| Space | Type a space | Back to typing, no space added, list stays visible |
+| Enter | Run what you typed | Fill in the selected command and run it |
+| Esc / Ctrl-G | Hide the list until you type again | Same as left |
 
-**Điền từng từ:** đang gõ `gi`, chọn `git push origin master`, bấm Shift+Tab bốn lần sẽ lần lượt
-được `git` → `git push` → `git push origin` → `git push origin master`. Chuỗi trong ngoặc như
-`"fix bug"` được điền trong một lần bấm.
+**Word-by-word fill:** type `gi`, select `git push origin master`, and press Shift+Tab four times
+to get `git` → `git push` → `git push origin` → `git push origin master`. A quoted string like
+`"fix bug"` is filled in a single press.
 
-Cmd+Tab không dùng được vì macOS giữ tổ hợp này để chuyển ứng dụng, nên điền từng từ dùng Shift+Tab.
+Cmd+Tab can't be used because macOS reserves it for app switching, so word-by-word fill uses Shift+Tab.
 
-Khi danh sách không hiện (chưa đủ ký tự, đã ẩn, hoặc đang duyệt history bằng ↑), mọi phím giữ đúng
-hành vi cũ, kể cả các phím oh-my-zsh gán (ví dụ Shift+Tab lùi trong menu completion). Các phím ↑, Tab,
-Space, Enter chỉ đổi nghĩa khi đang chọn một dòng, nên Ctrl-R, completion và history không bị ảnh hưởng.
+When the list isn't showing (too few characters, hidden, or while browsing history with ↑), every key
+keeps its original behavior, including keys bound by oh-my-zsh (for example Shift+Tab stepping back in
+the completion menu). ↑, Tab, Space and Enter only change meaning while a line is selected, so Ctrl-R,
+completion and history are unaffected.
 
-**Esc hơi trễ?** zsh chờ `KEYTIMEOUT` (mặc định 0.4s) sau Esc để phân biệt với phím mũi tên. Có thể đặt
-`KEYTIMEOUT=1` cho Esc phản hồi ngay, đổi lại kiểu bấm Esc rồi mới bấm phím (thay cho Option/Meta) sẽ không
-còn hoạt động. Ctrl-G luôn ẩn danh sách ngay lập tức.
+**Esc feels slow?** After Esc, zsh waits `KEYTIMEOUT` (0.4s by default) to tell it apart from arrow keys.
+Set `KEYTIMEOUT=1` for an instant Esc. The trade-off is that pressing Esc then a key (as a substitute for
+Option/Meta) stops working. Ctrl-G always hides the list immediately.
 
-**vi mode** (`bindkey -v`): Esc vừa ẩn danh sách vừa chuyển sang command mode như bình thường.
+**vi mode** (`bindkey -v`): Esc hides the list and switches to command mode as usual.
 
-## Tìm theo từ khoá
+## Keyword search
 
-Khi chỉ nhớ vài từ trong lệnh cũ, gõ `wib` rồi các từ đó. Mỗi từ khoá ngăn cách bằng dấu phẩy hoặc dấu cách,
-thứ tự nào cũng được, và lệnh phải chứa đủ mọi từ khoá.
+When you only remember a few words from an old command, type `wib` followed by those words. Keywords are
+separated by commas or spaces, in any order, and a command must contain all of them.
 
 ```text
 PROMPT> wib pull,master          PROMPT> wib pull
@@ -94,127 +139,139 @@ PROMPT> wib pull,master          PROMPT> wib pull
                                    docker pull nginx
 ```
 
-- `wib pull master`, `wib master,pull` và `wib pull,master` cho cùng kết quả.
-- Từ khoá nằm ở đâu trong lệnh cũng khớp (`8080` khớp `docker run -p8080:80 nginx`). Lệnh có từ khoá là
-  nguyên một từ xếp trên, rồi đến khớp ở đầu từ, cuối cùng là khớp giữa từ; cùng mức thì theo số lần dùng và
-  độ gần đây.
-- `wib` là tên tool, không phải từ khoá. Các lệnh `wib ...` đã chạy trước đó không xuất hiện trong kết quả.
-- Danh sách hiện khi phần sau `wib ` đủ `WIB_MIN_CHARS` ký tự. ↓ rồi Enter thay cả dòng bằng lệnh đã chọn và
-  chạy; Tab điền lệnh; Shift+Tab điền từng từ từ đầu lệnh.
-- Bấm Enter khi chưa chọn dòng nào thì `wib pull,master` chạy như lệnh và in danh sách ra terminal.
+- `wib pull master`, `wib master,pull` and `wib pull,master` give the same results.
+- A keyword matches anywhere in the command (`8080` matches `docker run -p8080:80 nginx`). Commands where
+  the keyword is a whole word rank first, then matches at the start of a word, then matches inside a word;
+  ties are broken by frequency and recency.
+- `wib` is the tool name, not a keyword. Previous `wib ...` invocations don't show up in results.
+- The list appears once the text after `wib ` reaches `WIB_MIN_CHARS` characters. ↓ then Enter replaces
+  the whole line with the selected command and runs it; Tab fills the command; Shift+Tab fills it word by word from the start.
+- Pressing Enter with no line selected runs `wib pull,master` as a command and prints the list to the terminal.
 
-## Cấu hình
+## Configuration
 
-Đặt biến môi trường trong `~/.zshrc`:
+Set environment variables in `~/.zshrc`:
 
-| Biến | Mặc định | Ý nghĩa |
-|------|----------|---------|
-| `WIB_PERIOD` | `30d` | Khoảng thời gian lấy lệnh: `12h`, `7d`, `2w`, `30d`, … |
-| `WIB_LIMIT` | `8` | Số dòng tối đa trong danh sách |
-| `WIB_MIN_CHARS` | `2` | Số ký tự tối thiểu trước khi hiện danh sách |
-| `WIB_ZSH_HISTORY` | `$HISTFILE` | File history của zsh |
-| `WIB_DATA_DIR` | `~/.local/share/wib` | Nơi lưu log riêng của wib |
+| Variable | Default | Meaning |
+|----------|---------|---------|
+| `WIB_PERIOD` | `30d` | Time window to draw commands from: `12h`, `7d`, `2w`, `30d`, … |
+| `WIB_LIMIT` | `8` | Maximum number of lines in the list |
+| `WIB_MIN_CHARS` | `2` | Minimum characters before the list appears |
+| `WIB_ZSH_HISTORY` | `$HISTFILE` | zsh history file |
+| `WIB_DATA_DIR` | `~/.local/share/wib` | Where wib keeps its own log |
 
-## Dữ liệu được lưu ở đâu
+## Where your data lives
 
-- wib đọc `~/.zsh_history` (cần `setopt EXTENDED_HISTORY` để có thời điểm chạy lệnh; oh-my-zsh bật sẵn).
-- Mỗi lệnh bạn chạy được ghi thêm vào `~/.local/share/wib/history.tsv` kèm thư mục và exit code.
-  Log này không bị giới hạn bởi `SAVEHIST`, nhưng chỉ giữ lệnh trong `WIB_PERIOD`: khi lệnh cũ nhất quá
-  `WIB_PERIOD` thêm một ngày, wib bỏ các lệnh cũ hơn `WIB_PERIOD` (khoảng một lần mỗi ngày). Vì vậy tăng
-  `WIB_PERIOD` về sau không lấy lại được các lệnh đã bị bỏ khỏi log này; lệnh cũ chỉ còn trong
-  `~/.zsh_history` nếu `SAVEHIST` đủ lớn, và không có thư mục, exit code.
-- wib không bao giờ sửa `~/.zsh_history`.
-- Lệnh bắt đầu bằng dấu cách và lệnh khớp `HISTORY_IGNORE` không được ghi. File log chỉ chủ tài khoản
-  đọc được (quyền 0600).
-- **Giới hạn:** lệnh bị loại bằng hàm `zshaddhistory` tự viết vẫn được wib ghi lại, vì zsh không cho biết
-  hàm đó đã loại lệnh nào. Nếu bạn lọc lệnh nhạy cảm theo cách này, hãy chuyển sang `HISTORY_IGNORE`.
+- wib reads `~/.zsh_history` (it needs `setopt EXTENDED_HISTORY` for timestamps; oh-my-zsh enables it by default).
+- Every command you run is appended to `~/.local/share/wib/history.tsv` along with its directory and exit code.
+  This log isn't capped by `SAVEHIST`, but it only keeps commands within `WIB_PERIOD`: once the oldest entry
+  is more than `WIB_PERIOD` plus one day old, wib drops entries older than `WIB_PERIOD` (roughly once a day).
+  Increasing `WIB_PERIOD` later therefore can't bring back commands already dropped from this log; older
+  commands remain only in `~/.zsh_history` if `SAVEHIST` is large enough, and without directory or exit code.
+- wib never modifies `~/.zsh_history`.
+- Commands starting with a space and commands matching `HISTORY_IGNORE` are not recorded. The log file is
+  readable only by its owner (mode 0600).
+- **Limitation:** commands rejected by a custom `zshaddhistory` function are still recorded by wib, because
+  zsh doesn't report which commands that function rejected. If you filter sensitive commands this way,
+  switch to `HISTORY_IGNORE`.
 
-## Tốc độ và bộ nhớ
+## Speed and memory
 
-**Vì sao nhanh**
+**Why it's fast**
 
-- Mỗi lần buffer thay đổi, zsh gọi `wib query` một lần. Gõ lại cùng nội dung hoặc chỉ di chuyển trên
-  danh sách thì không gọi lại.
-- wib đọc thẳng file history rồi trả kết quả, không có bước khởi động hay nạp index. Binary build với
-  LTO, không phụ thuộc thư viện ngoài.
-- wib đọc `~/.zsh_history` từ cuối file lên và dừng khi gặp lệnh cũ hơn `WIB_PERIOD`, nên phần cũ của file
-  không bao giờ được đọc. `history.tsv` tự dọn theo `WIB_PERIOD`. Thời gian tra vì thế phụ thuộc vào số lệnh
-  trong `WIB_PERIOD`, không tăng theo số năm bạn dùng.
-- Khi khớp, wib so tiền tố trước vì đây là trường hợp phổ biến. Phép khớp mờ chỉ chạy khi các chữ cái
-  của input có xuất hiện theo đúng thứ tự trong lệnh, nên phần lớn lệnh bị loại sau một lượt quét.
-  Chi phí chấm điểm tỉ lệ với độ dài input nhân độ dài lệnh, nên lệnh rất dài cũng không làm chậm.
-- Ghi lệnh vào log (`wib record`) chạy nền sau khi lệnh kết thúc, nên không làm prompt hiện chậm.
+- zsh calls `wib query` once each time the buffer changes. Retyping the same content or moving through
+  the list doesn't trigger another call.
+- wib reads the history file directly and returns results, with no startup phase and no index to load.
+  The binary is built with LTO and has no external library dependencies.
+- wib reads `~/.zsh_history` backwards from the end and stops at the first command older than `WIB_PERIOD`,
+  so the old part of the file is never read. `history.tsv` prunes itself by `WIB_PERIOD`. Lookup time
+  therefore depends on how many commands fall inside `WIB_PERIOD`, not on how many years you've used your shell.
+- Matching tries a prefix comparison first, since that's the common case. Fuzzy matching only runs when the
+  input's letters appear in order in the command, so most commands are ruled out in a single scan. Scoring
+  cost is proportional to input length times command length, so very long commands don't slow it down.
+- Recording a command to the log (`wib record`) runs in the background after the command finishes, so it
+  never delays your prompt.
 
-**Vì sao không rò rỉ bộ nhớ**
+**Why it doesn't leak memory**
 
-wib không có daemon hay tiến trình chạy thường trực. Mỗi lần tra cứu là một tiến trình riêng, chạy xong
-thì thoát và hệ điều hành thu hồi toàn bộ bộ nhớ. Vì vậy mở terminal nhiều ngày hay gõ hàng nghìn phím
-cũng không làm bộ nhớ tăng dần. Shell zsh chỉ giữ tối đa `WIB_LIMIT` dòng gợi ý của lần tra gần nhất.
+wib has no daemon and no long-running process. Each lookup is its own process that exits when done, and
+the OS reclaims all of its memory. Keeping a terminal open for days or typing thousands of keystrokes
+won't make memory grow. The zsh shell itself holds at most `WIB_LIMIT` suggestion lines from the latest lookup.
 
-**Số đo** (`scripts/bench.sh`, macOS, `WIB_PERIOD=30d`, gồm cả thời gian khởi động tiến trình, 100 lần tra
-mỗi file; file history giả sinh bằng `scripts/gen-history.sh`):
+**Benchmarks** (`scripts/bench.sh`, macOS, `WIB_PERIOD=30d`, process startup included, 100 lookups per
+file; synthetic history files generated by `scripts/gen-history.sh`):
 
-| File history | Lệnh trong 30 ngày | p95 | Bộ nhớ tối đa mỗi lần tra |
+| History file | Commands within 30 days | p95 | Peak memory per lookup |
 |---|---|---|---|
-| 10.000 lệnh trong 400 ngày | ~750 | 5,4 ms | ~2 MB |
-| 100.000 lệnh trong 400 ngày | ~7.500 | 8,8 ms | ~3,5 MB |
-| 500.000 lệnh trong 7 năm (200 lệnh/ngày) | ~6.000 | 6,9 ms | ~3,3 MB |
-| 500.000 lệnh trong 400 ngày (1.250 lệnh/ngày) | ~37.500 | 22 ms | ~12 MB |
+| 10,000 commands over 400 days | ~750 | 5.4 ms | ~2 MB |
+| 100,000 commands over 400 days | ~7,500 | 8.8 ms | ~3.5 MB |
+| 500,000 commands over 7 years (200/day) | ~6,000 | 6.9 ms | ~3.3 MB |
+| 500,000 commands over 400 days (1,250/day) | ~37,500 | 22 ms | ~12 MB |
 
-Ba dòng cuối cho thấy thời gian tra đi theo số lệnh trong period: file 500.000 lệnh trải trên 7 năm còn
-nhanh hơn file 100.000 lệnh trải trên 400 ngày. Chỉ khi bạn gõ hàng chục nghìn lệnh trong một period mới
-thấy hơi trễ; khi đó hãy giảm `WIB_PERIOD`.
+The last three rows show lookup time tracks the number of commands in the period: a 500,000-command
+file spanning 7 years is faster than a 100,000-command file spanning 400 days. You'd only notice any lag
+if you type tens of thousands of commands within one period; in that case, lower `WIB_PERIOD`.
 
-Chế độ từ khoá (`bench.sh … keywords`) có p95 tương đương chế độ thường: 7–10 ms trên file 100.000 lệnh
-trong 400 ngày.
+Keyword mode (`bench.sh … keywords`) has a p95 comparable to normal mode: 7–10 ms on the
+100,000-command, 400-day file.
 
-## Dùng cùng plugin khác
+## Using it with other plugins
 
-- **zsh-autosuggestions:** gợi ý xám vẫn hiện; bấm → chỉ nhận gợi ý đó, danh sách của wib không bị dán vào dòng lệnh.
-- **powerlevel10k / oh-my-zsh:** đặt dòng `eval` sau khi các plugin đã nạp để wib ghi nhớ đúng phím gốc.
+- **zsh-autosuggestions:** the grey hint still appears; pressing → accepts only that hint, and wib's list is never pasted into the command line.
+- **powerlevel10k / oh-my-zsh:** put the `eval` line after all plugins have loaded so wib captures the original key bindings.
 
-## Giới hạn đã biết
+## Known limitations
 
-- Chỉ hỗ trợ zsh, chưa có bash hay fish.
-- Cài đặt cần Rust toolchain; chưa có Homebrew hay binary dựng sẵn.
-- Không đồng bộ lịch sử giữa các máy.
-- wib coi `~/.zsh_history` được ghi theo thứ tự thời gian (cho phép lệch tới một ngày, như khi `sharehistory`
-  ghi một lệnh chạy lâu sau các lệnh mới hơn). Nếu bạn ghép file history từ máy khác vào cuối, các lệnh mới
-  hơn nằm phía trước đoạn ghép có thể không được gợi ý.
-- Bấm Ctrl-C khi danh sách đang hiện sẽ để lại danh sách trong scrollback (giống danh sách completion của zsh).
-- Ngay sau khi gọi lại một lệnh bằng ↑/↓ hoặc Ctrl-R, danh sách không hiện để ↓ vẫn duyệt history; gõ thêm ký tự là danh sách hiện lại.
+- zsh only; bash and fish are not supported yet.
+- Installation requires a Rust toolchain; there's no Homebrew formula or prebuilt binary yet.
+- No history sync between machines.
+- wib assumes `~/.zsh_history` is written in chronological order (with up to one day of skew allowed, such as
+  when `sharehistory` writes a long-running command after newer ones). If you append a history file from
+  another machine to the end, newer commands located before the appended block may not be suggested.
+- Pressing Ctrl-C while the list is visible leaves the list in the scrollback (like zsh's completion list).
+- Right after recalling a command with ↑/↓ or Ctrl-R, the list stays hidden so ↓ keeps browsing history;
+  type another character and the list reappears.
 
-## Dùng từ dòng lệnh
+## Command-line usage
 
 ```sh
-wib pull,master                   # tìm theo từ khoá, thứ tự bất kỳ
-wib -- init                       # tìm chữ trùng tên lệnh con (init, query, record)
-wib query --period 7d -- dcup     # in các lệnh khớp, mỗi dòng một lệnh
+wib pull,master                   # keyword search, any order
+wib -- init                       # search for text that collides with a subcommand (init, query, record)
+wib query --period 7d -- dcup     # print matching commands, one per line
 wib query --keywords -- pull,master
-wib query -0 -- git               # phân tách bằng NUL, giữ nguyên lệnh nhiều dòng
+wib query -0 -- git               # NUL-separated output, preserves multi-line commands
 ```
 
-`wib <từ khoá>` lấy period và số dòng từ `WIB_PERIOD`, `WIB_LIMIT`, và đọc history từ `WIB_ZSH_HISTORY` hoặc
-`~/.zsh_history`. Biến đặt trong `~/.zshrc` mà không `export` thì lệnh này không thấy, nên nếu đổi các giá
-trị đó (hoặc dùng `HISTFILE` khác), hãy `export` chúng, ví dụ `export WIB_ZSH_HISTORY=$HISTFILE`.
+`wib <keywords>` takes its period and line count from `WIB_PERIOD` and `WIB_LIMIT`, and reads history from
+`WIB_ZSH_HISTORY` or `~/.zsh_history`. Variables set in `~/.zshrc` without `export` aren't visible to this
+command, so if you change those values (or use a different `HISTFILE`), `export` them, for example
+`export WIB_ZSH_HISTORY=$HISTFILE`.
 
-## Gỡ cài đặt
+## Uninstall
 
-Xoá dòng `eval "$(wib init zsh)"` khỏi `~/.zshrc`, rồi:
+Remove the `eval "$(wib init zsh)"` line from `~/.zshrc`, then:
 
 ```sh
 cargo uninstall wib
 rm -rf ~/.local/share/wib
 ```
 
-## Phát triển
+## Development
 
 ```sh
 cargo test                                   # unit + CLI tests
 cargo install --path . --root .bin
-zsh tests/zle/run.zsh "$PWD/.bin/bin/wib"    # lái zsh thật qua zpty: phím, Ctrl-R, vi mode, autosuggestions
-zsh scripts/bench.sh "$PWD/.bin/bin/wib"     # đo p50/p95 trên bản copy của ~/.zsh_history
-zsh scripts/gen-history.sh 500000 400 /tmp/h  # sinh file history giả: 500k lệnh trong 400 ngày
+zsh tests/zle/run.zsh "$PWD/.bin/bin/wib"    # drives a real zsh via zpty: keys, Ctrl-R, vi mode, autosuggestions
+zsh scripts/bench.sh "$PWD/.bin/bin/wib"     # measure p50/p95 on a copy of ~/.zsh_history
+zsh scripts/gen-history.sh 500000 400 /tmp/h  # generate a synthetic history: 500k commands over 400 days
 zsh scripts/bench.sh "$PWD/.bin/bin/wib" /tmp/h 100
-zsh scripts/bench.sh "$PWD/.bin/bin/wib" /tmp/h 100 keywords   # đo chế độ từ khoá
+zsh scripts/bench.sh "$PWD/.bin/bin/wib" /tmp/h 100 keywords   # benchmark keyword mode
 ```
+
+---
+
+<div align="center">
+
+**If wib saved you a Ctrl-R today, give it a ⭐. It helps other terminal dwellers find it.**
+
+</div>
