@@ -83,6 +83,26 @@ còn hoạt động. Ctrl-G luôn ẩn danh sách ngay lập tức.
 
 **vi mode** (`bindkey -v`): Esc vừa ẩn danh sách vừa chuyển sang command mode như bình thường.
 
+## Tìm theo từ khoá
+
+Khi chỉ nhớ vài từ trong lệnh cũ, gõ `wib` rồi các từ đó. Mỗi từ khoá ngăn cách bằng dấu phẩy hoặc dấu cách,
+thứ tự nào cũng được, và lệnh phải chứa đủ mọi từ khoá.
+
+```text
+PROMPT> wib pull,master          PROMPT> wib pull
+› git pull origin master         › git pull origin master
+                                   docker pull nginx
+```
+
+- `wib pull master`, `wib master,pull` và `wib pull,master` cho cùng kết quả.
+- Từ khoá nằm ở đâu trong lệnh cũng khớp (`8080` khớp `docker run -p8080:80 nginx`). Lệnh có từ khoá là
+  nguyên một từ xếp trên, rồi đến khớp ở đầu từ, cuối cùng là khớp giữa từ; cùng mức thì theo số lần dùng và
+  độ gần đây.
+- `wib` là tên tool, không phải từ khoá. Các lệnh `wib ...` đã chạy trước đó không xuất hiện trong kết quả.
+- Danh sách hiện khi phần sau `wib ` đủ `WIB_MIN_CHARS` ký tự. ↓ rồi Enter thay cả dòng bằng lệnh đã chọn và
+  chạy; Tab điền lệnh; Shift+Tab điền từng từ từ đầu lệnh.
+- Bấm Enter khi chưa chọn dòng nào thì `wib pull,master` chạy như lệnh và in danh sách ra terminal.
+
 ## Cấu hình
 
 Đặt biến môi trường trong `~/.zshrc`:
@@ -145,6 +165,9 @@ Ba dòng cuối cho thấy thời gian tra đi theo số lệnh trong period: fi
 nhanh hơn file 100.000 lệnh trải trên 400 ngày. Chỉ khi bạn gõ hàng chục nghìn lệnh trong một period mới
 thấy hơi trễ; khi đó hãy giảm `WIB_PERIOD`.
 
+Chế độ từ khoá (`bench.sh … keywords`) có p95 tương đương chế độ thường: 7–10 ms trên file 100.000 lệnh
+trong 400 ngày.
+
 ## Dùng cùng plugin khác
 
 - **zsh-autosuggestions:** gợi ý xám vẫn hiện; bấm → chỉ nhận gợi ý đó, danh sách của wib không bị dán vào dòng lệnh.
@@ -164,9 +187,16 @@ thấy hơi trễ; khi đó hãy giảm `WIB_PERIOD`.
 ## Dùng từ dòng lệnh
 
 ```sh
+wib pull,master                   # tìm theo từ khoá, thứ tự bất kỳ
+wib -- init                       # tìm chữ trùng tên lệnh con (init, query, record)
 wib query --period 7d -- dcup     # in các lệnh khớp, mỗi dòng một lệnh
+wib query --keywords -- pull,master
 wib query -0 -- git               # phân tách bằng NUL, giữ nguyên lệnh nhiều dòng
 ```
+
+`wib <từ khoá>` lấy period và số dòng từ `WIB_PERIOD`, `WIB_LIMIT`, và đọc history từ `WIB_ZSH_HISTORY` hoặc
+`~/.zsh_history`. Biến đặt trong `~/.zshrc` mà không `export` thì lệnh này không thấy, nên nếu đổi các giá
+trị đó (hoặc dùng `HISTFILE` khác), hãy `export` chúng, ví dụ `export WIB_ZSH_HISTORY=$HISTFILE`.
 
 ## Gỡ cài đặt
 
@@ -186,4 +216,5 @@ zsh tests/zle/run.zsh "$PWD/.bin/bin/wib"    # lái zsh thật qua zpty: phím, 
 zsh scripts/bench.sh "$PWD/.bin/bin/wib"     # đo p50/p95 trên bản copy của ~/.zsh_history
 zsh scripts/gen-history.sh 500000 400 /tmp/h  # sinh file history giả: 500k lệnh trong 400 ngày
 zsh scripts/bench.sh "$PWD/.bin/bin/wib" /tmp/h 100
+zsh scripts/bench.sh "$PWD/.bin/bin/wib" /tmp/h 100 keywords   # đo chế độ từ khoá
 ```

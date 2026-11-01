@@ -123,7 +123,7 @@ fn null_output_keeps_multiline_commands_intact() {
 fn invalid_arguments_exit_with_2() {
     let sb = Sandbox::new("args", &[]);
     assert_eq!(sb.wib(&["query", "--period", "7x", "--", "ls"]).1, 2);
-    assert_eq!(sb.wib(&["bogus"]).1, 2);
+    assert_eq!(sb.wib(&["--bogus"]).1, 2);
     assert_eq!(sb.wib(&["init", "bash"]).1, 2);
 }
 
@@ -202,4 +202,68 @@ fn concurrent_records_lose_nothing_while_compacting() {
     cmds.sort_unstable();
     cmds.dedup();
     assert_eq!(cmds.len(), 800);
+}
+
+fn wib_env(sb: &Sandbox, args: &[&str], env: &[(&str, &str)]) -> (Vec<String>, i32) {
+    let out = Command::new(env!("CARGO_BIN_EXE_wib"))
+        .args(args)
+        .env("WIB_ZSH_HISTORY", sb.dir.join("zsh_history"))
+        .env("WIB_DATA_DIR", sb.dir.join("data"))
+        .env_remove("WIB_PERIOD")
+        .env_remove("WIB_LIMIT")
+        .envs(env.iter().copied())
+        .output()
+        .unwrap();
+    let text = String::from_utf8(out.stdout).unwrap();
+    (text.lines().map(str::to_string).collect(), out.status.code().unwrap_or(-1))
+}
+
+fn keyword_sandbox(name: &str) -> Sandbox {
+    let n = now();
+    Sandbox::new(
+        name,
+        &[
+            (n - 3 * DAY, "docker pull nginx"),
+            (n - 600, "git pull origin master"),
+            (n - 500, "git push origin master"),
+            (n - 400, "echo query"),
+            (n - 300, "wib pull,master"),
+        ],
+    )
+}
+
+#[test]
+fn bare_keywords_search_in_any_order() {
+    let sb = keyword_sandbox("kw");
+    let run = |args: &[&str]| wib_env(&sb, args, &[]);
+    assert_eq!(run(&["pull"]), (vec!["git pull origin master".into(), "docker pull nginx".into()], 0));
+    for args in [&["pull,master"][..], &["master", "pull"], &["master, pull"], &["--", "pull,master"]] {
+        assert_eq!(run(args), (vec!["git pull origin master".to_string()], 0), "{args:?}");
+    }
+    assert_eq!(run(&["--", "query"]), (vec!["echo query".to_string()], 0));
+    assert_eq!(run(&["pull,main"]), (vec![], 0));
+}
+
+#[test]
+fn keyword_query_flag_for_the_widget() {
+    let sb = keyword_sandbox("kwflag");
+    let (out, code) = sb.wib(&["query", "--keywords", "-0", "--", "master pull"]);
+    assert_eq!((out.as_str(), code), ("git pull origin master\0", 0));
+    // Without the flag the input is matched in order, as before.
+    assert!(sb.query("30d", "master pull").is_empty());
+}
+
+#[test]
+fn bare_keywords_read_period_and_limit_from_env() {
+    let sb = keyword_sandbox("kwenv");
+    assert_eq!(wib_env(&sb, &["pull"], &[("WIB_LIMIT", "1")]).0, ["git pull origin master"]);
+    assert_eq!(wib_env(&sb, &["pull"], &[("WIB_PERIOD", "1d")]).0, ["git pull origin master"]);
+    assert_eq!(wib_env(&sb, &["pull"], &[("WIB_LIMIT", "x")]).1, 2);
+}
+
+#[test]
+fn missing_keywords_exit_with_2() {
+    let sb = keyword_sandbox("kwnone");
+    assert_eq!(wib_env(&sb, &["--"], &[]).1, 2);
+    assert_eq!(wib_env(&sb, &[","], &[]).1, 2);
 }

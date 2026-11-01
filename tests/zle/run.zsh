@@ -16,11 +16,14 @@ integer now=$EPOCHSECONDS failures=0 passes=0
 
 # ---------------------------------------------------------------- harness
 
-# start_shell <extra .zshrc lines>: fresh history, fresh wib log, new interactive zsh.
+# start_shell <extra .zshrc lines> [extra history commands...]: fresh history,
+# fresh wib log, new interactive zsh.
 start_shell() {
   zpty -d wt 2>/dev/null
   rm -rf $tmp/data
+  local extra
   {
+    for extra in "${@:2}"; print -r -- ": $(( now - 950 )):0;$extra"
     print -r -- ": $(( now - 900 )):0;git status"
     print -r -- ": $(( now - 800 )):0;git commit -m \"fix bug\""
     print -r -- ": $(( now - 700 )):0;docker compose up"
@@ -190,6 +193,31 @@ sleep 0.3
 grep -qE 'secret|TOKEN' $tmp/data/history.tsv 2>/dev/null
 check "filtered commands are not recorded" 1 $?
 check "log file is private" 600 "$(stat -f %Lp $tmp/data/history.tsv)"
+
+# ---------------------------------------------------------------- keyword search
+
+start_shell "path=('${wib:h}' \$path); export WIB_ZSH_HISTORY=$tmp/zsh_history" 'echo docker pull nginx' 'echo pull origin master' 'wib pull,master'
+
+send 'wib p'; probe
+check "keywords: below WIB_MIN_CHARS shows no list" "wib p|typing|0" "$REPLY"
+send 'ull'; probe
+check "keywords: one keyword" "wib pull|typing|2" "$REPLY"
+send ',master'; probe
+check "keywords: two keywords, old wib calls skipped" "wib pull,master|typing|1" "$REPLY"
+reset_line; send 'wib master pull'; probe
+check "keywords: any order, space separated" "wib master pull|typing|1" "$REPLY"
+send $'\e[B'; send $'\t'; buffer
+check "keywords: tab replaces the whole line" "echo pull origin master" "$REPLY"
+reset_line; send 'wib pull,master'; send $'\e[Z'; buffer
+check "keywords: shift+tab fills the first word" "echo" "$REPLY"
+reset_line; send 'wib pull,master'; send $'\e[B'; send $'\r'; more
+sleep 0.3
+[[ $(tail -n 1 $tmp/data/history.tsv 2>/dev/null) == *$'\t'"echo pull origin master" ]]
+check "keywords: enter runs the selected command" 0 $?
+send 'wib nginx'; send $'\r'; more
+[[ $out == *"echo docker pull nginx"* ]]; check "keywords: enter without a selection prints matches" 0 $?
+reset_line; send 'gi'; probe
+check "keywords: normal typing unchanged" "gi|typing|3" "$REPLY"
 
 # ---------------------------------------------------------------- vi mode
 
