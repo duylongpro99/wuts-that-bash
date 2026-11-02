@@ -78,10 +78,12 @@ _wib_render() {
 }
 
 # `wib <keywords>` on the line: REPLY = the keywords (wib itself is not one).
+# `wib forget|query|record|init ...` runs a subcommand, so it is a plain line.
 _wib_keywords() {
   setopt localoptions extended_glob
   [[ $BUFFER == wib[[:blank:]]* ]] || return 1
   REPLY=${BUFFER#wib[[:blank:]]##}
+  [[ $REPLY != (forget|query|record|init)(|[[:blank:]]*) ]]
 }
 
 _wib_should_fetch() {
@@ -102,7 +104,7 @@ _wib_fetch() {
   local -a mode=( -- "$BUFFER" )
   _wib_keywords && mode=( --keywords -- "$REPLY" )
   out=$(WIB_ZSH_HISTORY=${WIB_ZSH_HISTORY:-${HISTFILE:-$HOME/.zsh_history}} \
-        "$_wib_bin" query -0 --period "${WIB_PERIOD:-30d}" --limit "${WIB_LIMIT:-8}" \
+        "$_wib_bin" query -0 --cwd "$PWD" --period "${WIB_PERIOD:-30d}" --limit "${WIB_LIMIT:-8}" \
         "${mode[@]}" 2>/dev/null) || return
   _wib_items=( "${(@0)out}" )
   _wib_items=( "${(@)_wib_items:#}" )

@@ -4,23 +4,33 @@
 //! - `wib <keywords>` / `wib -- <keywords>`
 //!   Prints commands containing every keyword (comma or space separated, any
 //!   order), best-first. Period and limit come from `WIB_PERIOD` / `WIB_LIMIT`.
-//! - `wib query [--period 30d] [--limit 8] [--keywords] [-0] -- <input>`
+//!   Commands used in the current project (`$PWD`) rank first among equal matches.
+//! - `wib query [--period 30d] [--limit 8] [--keywords] [--cwd <dir>] [-0] -- <input>`
 //!   Prints matching commands best-first. Default output is one command per
 //!   line with embedded newlines shown as `\n` (for humans). With `-0`, each
 //!   command is printed verbatim and terminated by NUL; the zsh widget uses this.
-//!   With `--keywords`, `<input>` is a keyword search as above.
+//!   With `--keywords`, `<input>` is a keyword search as above. With `--cwd`,
+//!   commands run in that directory's project (git root, else the directory)
+//!   rank first among equal matches.
+//! - `wib forget <command>`  Never suggest `<command>` again (exact match after
+//!   trimming). Stored in `<data dir>/forget`; `.zsh_history` is not touched.
 //! - `wib record --ts <unix> --exit <code> --cwd <dir> [--period 30d] -- <cmd>`
 //!   Appends a command to wib's own log (ignored if it starts with a space).
 //!   With `--period`, entries older than the period are dropped from the log.
 //! - `wib init zsh`  Prints the zsh integration script for `eval`.
+//!
+//! Commands that never succeeded rank after equal matches that did. Keywords
+//! that are also subcommand names (forget, init, query, record) need `wib --`.
 
 mod entry;
 mod log_store;
 mod matcher;
+mod project;
 mod rank;
 mod zsh_history;
 
 use entry::{parse_period, Entry};
+use rank::RankContext;
 use std::collections::HashSet;
 use std::ffi::OsString;
 use std::io::{self, Write};
@@ -37,8 +47,9 @@ wib - suggest previously used commands from zsh history
 
 Usage:
   wib <keywords>                  e.g. `wib pull,master` or `wib master pull`
-  wib -- <keywords>               when a keyword is also a command name (init, query, ...)
-  wib query [--period 30d] [--limit 8] [--keywords] [-0] -- <input>
+  wib -- <keywords>               when a keyword is also a command name (forget, init, query, record)
+  wib query [--period 30d] [--limit 8] [--keywords] [--cwd <dir>] [-0] -- <input>
+  wib forget <command>            never suggest <command> again, e.g. `wib forget 'git push --force'`
   wib record --ts <unix> --exit <code> --cwd <dir> [--period 30d] -- <command>
   wib init zsh
 
@@ -54,6 +65,7 @@ fn main() -> ExitCode {
         Some("query") => cmd_query(&args[1..]),
         Some("record") => cmd_record(&args[1..]),
         Some("init") => cmd_init(&args[1..]),
+        Some("forget") => cmd_forget(&args[1..]),
         Some("-V" | "--version") => {
             println!("wib {}", env!("CARGO_PKG_VERSION"));
             Ok(())
@@ -146,7 +158,8 @@ fn load_entries(period_secs: i64, now: i64) -> Vec<Entry> {
     entries
 }
 
-/// `wib <keywords>`: a keyword query with period and limit from the environment.
+/// `wib <keywords>`: a keyword query with period and limit from the environment,
+/// preferring commands from the project of the current directory.
 fn cmd_keywords(keywords: &[String]) -> Result<(), String> {
     let input = keywords.join(" ");
     if input.split(|c: char| c == ',' || c.is_whitespace()).all(str::is_empty) {
@@ -155,7 +168,12 @@ fn cmd_keywords(keywords: &[String]) -> Result<(), String> {
     let env = |name: &str, default: &str| {
         std::env::var(name).ok().filter(|v| !v.is_empty()).unwrap_or_else(|| default.to_string())
     };
-    let args = [
+    // `$PWD` is the logical path, as recorded by the shell hook.
+    let cwd = log_store::env_path("PWD")
+        .or_else(|| std::env::current_dir().ok())
+        .map(|p| p.to_string_lossy().into_owned());
+    let mut args: Vec<String> = cwd.into_iter().flat_map(|d| ["--cwd".to_string(), d]).collect();
+    args.extend([
         "--keywords".to_string(),
         "--period".to_string(),
         env("WIB_PERIOD", DEFAULT_PERIOD),
@@ -163,12 +181,12 @@ fn cmd_keywords(keywords: &[String]) -> Result<(), String> {
         env("WIB_LIMIT", &DEFAULT_LIMIT.to_string()),
         "--".to_string(),
         input,
-    ];
+    ]);
     cmd_query(&args)
 }
 
 fn cmd_query(args: &[String]) -> Result<(), String> {
-    let a = Args::parse(args, &["--period", "--limit"], &["-0", "--keywords"])?;
+    let a = Args::parse(args, &["--period", "--limit", "--cwd"], &["-0", "--keywords"])?;
     let period = parse_period(a.value("--period").unwrap_or(DEFAULT_PERIOD))?;
     let limit = match a.value("--limit") {
         Some(v) => v.parse().map_err(|_| format!("invalid --limit '{v}'"))?,
@@ -177,10 +195,13 @@ fn cmd_query(args: &[String]) -> Result<(), String> {
     let input = a.rest.join(" ");
     let now = now();
     let entries = load_entries(period, now);
+    let scope = a.value("--cwd").map(|cwd| project::scope(cwd, &log_store::home()));
+    let forgotten = log_store::load_forgotten(&log_store::data_dir());
+    let ctx = RankContext { scope: scope.as_deref(), forgotten: Some(&forgotten) };
     let results = if a.has("--keywords") {
-        rank::rank_keywords(&entries, &input, now, limit)
+        rank::rank_keywords(&entries, &input, now, limit, ctx)
     } else {
-        rank::rank(&entries, &input, now, limit)
+        rank::rank(&entries, &input, now, limit, ctx)
     };
 
     let mut out = io::BufWriter::new(io::stdout().lock());
@@ -222,6 +243,28 @@ fn cmd_record(args: &[String]) -> Result<(), String> {
         .map(|secs| now.saturating_sub(secs));
     log_store::append(&log_store::data_dir(), &entry, keep_since)
         .map_err(|e| format!("cannot write log: {e}"))
+}
+
+/// `wib forget <command>`: words are joined with single spaces, so quote a
+/// command whose spacing matters.
+fn cmd_forget(args: &[String]) -> Result<(), String> {
+    let words = match args.first().map(String::as_str) {
+        Some("--") => &args[1..],
+        _ => args,
+    };
+    let cmd = words.join(" ");
+    let cmd = cmd.trim();
+    if cmd.is_empty() {
+        return Err(format!("no command to forget\n\n{USAGE}"));
+    }
+    let added = log_store::forget(&log_store::data_dir(), cmd).map_err(|e| format!("cannot write forget file: {e}"))?;
+    let shown = cmd.replace('\\', "\\\\").replace('\n', "\\n");
+    if added {
+        println!("forgot: {shown}");
+    } else {
+        println!("already forgotten: {shown}");
+    }
+    Ok(())
 }
 
 fn cmd_init(args: &[String]) -> Result<(), String> {

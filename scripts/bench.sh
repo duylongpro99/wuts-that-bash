@@ -3,6 +3,8 @@
 # against a copy of a real history file. The original file is never modified.
 # Usage: zsh scripts/bench.sh /path/to/wib [history-file] [runs] [prefix|keywords]
 # `keywords` measures `wib query --keywords` with 1-2 words (3+ chars) of real commands.
+# Lookups pass `--cwd "$PWD"` like the zsh widget does; WIB_BENCH_CWD=0 leaves it out
+# to compare against lookups without project ranking.
 emulate -L zsh
 zmodload zsh/datetime
 
@@ -37,6 +39,7 @@ for (( i = 1; i <= runs; i++ )); do
 done
 local -a flags=()
 [[ $mode == keywords ]] && flags=( --keywords )
+[[ ${WIB_BENCH_CWD:-1} == 0 ]] || flags+=( --cwd "$PWD" )
 
 local -a ms
 float t0
@@ -48,5 +51,5 @@ done
 
 ms=( ${(on)ms} )
 pct() { printf '%.2f' ${ms[$(( (${#ms} * $1 + 99) / 100 ))]} }
-print "entries in file: $(LC_ALL=C grep -ac '^: [0-9]' $tmp/zsh_history)  runs: $runs  mode: $mode"
+print "entries in file: $(LC_ALL=C grep -ac '^: [0-9]' $tmp/zsh_history)  runs: $runs  mode: $mode  cwd: $( [[ ${WIB_BENCH_CWD:-1} == 0 ]] && print off || print on )"
 print "p50: $(pct 50) ms   p95: $(pct 95) ms   max: $(printf '%.2f' ${ms[-1]}) ms"
