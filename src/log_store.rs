@@ -2,12 +2,15 @@
 //! It complements `.zsh_history`, which has no cwd/exit code and is capped by SAVEHIST.
 
 use crate::entry::Entry;
+use std::collections::HashSet;
 use std::fs::{self, OpenOptions};
 use std::io::{self, Read, Seek, SeekFrom, Write};
 use std::os::unix::fs::{DirBuilderExt, MetadataExt, OpenOptionsExt, PermissionsExt};
 use std::path::{Path, PathBuf};
 
 pub const LOG_FILE: &str = "history.tsv";
+/// Commands removed from suggestions with `wib forget`, one escaped command per line.
+pub const FORGET_FILE: &str = "forget";
 const LOCK_FILE: &str = "history.lock";
 
 /// Compaction waits until the oldest entry is this much past the cutoff, so the
@@ -146,6 +149,44 @@ pub fn append(dir: &Path, e: &Entry, keep_since: Option<i64>) -> io::Result<()> 
         let _ = compact_if_stale(dir, cutoff);
     }
     Ok(())
+}
+
+/// Commands removed with `wib forget`, trimmed. A missing file means none.
+pub fn load_forgotten(dir: &Path) -> HashSet<String> {
+    match fs::read(dir.join(FORGET_FILE)) {
+        Ok(bytes) => String::from_utf8_lossy(&bytes)
+            .lines()
+            .map(|line| unescape(line).trim().to_string())
+            .filter(|cmd| !cmd.is_empty())
+            .collect(),
+        Err(_) => HashSet::new(),
+    }
+}
+
+/// Add `cmd` to the forget file. Returns `false` if it was already there.
+/// Like the log, the file holds command lines and stays private (0700 dir, 0600 file).
+pub fn forget(dir: &Path, cmd: &str) -> io::Result<bool> {
+    let cmd = cmd.trim();
+    fs::DirBuilder::new().recursive(true).mode(0o700).create(dir)?;
+    let _lock = lock(dir).ok();
+    let mut f = OpenOptions::new()
+        .create(true)
+        .append(true)
+        .read(true)
+        .mode(0o600)
+        .open(dir.join(FORGET_FILE))?;
+    if f.metadata()?.permissions().mode() & 0o077 != 0 {
+        f.set_permissions(fs::Permissions::from_mode(0o600))?;
+    }
+    if load_forgotten(dir).contains(cmd) {
+        return Ok(false);
+    }
+    let mut line = escape(cmd) + "\n";
+    if ends_without_newline(&mut f)? {
+        line.insert(0, '\n');
+    }
+    f.write_all(line.as_bytes())?;
+    Ok(true)
 }
 
 /// Exclusive lock shared by every writer. It lives in its own file because
@@ -350,6 +391,24 @@ mod tests {
         assert_eq!(fs::read_to_string(dir.join(LOG_FILE)).unwrap(), before);
         compact_if_stale(&dir, 31 * day).unwrap();
         assert_eq!(fs::read_to_string(dir.join(LOG_FILE)).unwrap(), "");
+        fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn forget_dedups_and_round_trips_multiline() {
+        let dir = std::env::temp_dir().join(format!("wib-forget-{}", std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        assert!(load_forgotten(&dir).is_empty());
+        assert!(forget(&dir, " git push --force ").unwrap());
+        assert!(!forget(&dir, "git push --force").unwrap());
+        assert!(forget(&dir, "a\tb\\c\nd").unwrap());
+        let raw = fs::read_to_string(dir.join(FORGET_FILE)).unwrap();
+        assert_eq!(raw.lines().count(), 2);
+        let expected: HashSet<String> = ["git push --force".to_string(), "a\tb\\c\nd".to_string()].into();
+        assert_eq!(load_forgotten(&dir), expected);
+        let file_mode = fs::metadata(dir.join(FORGET_FILE)).unwrap().permissions().mode() & 0o777;
+        let dir_mode = fs::metadata(&dir).unwrap().permissions().mode() & 0o777;
+        assert_eq!((file_mode, dir_mode), (0o600, 0o700));
         fs::remove_dir_all(&dir).unwrap();
     }
 

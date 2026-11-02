@@ -1,4 +1,5 @@
 use std::fs;
+use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -266,4 +267,97 @@ fn missing_keywords_exit_with_2() {
     let sb = keyword_sandbox("kwnone");
     assert_eq!(wib_env(&sb, &["--"], &[]).1, 2);
     assert_eq!(wib_env(&sb, &[","], &[]).1, 2);
+}
+
+fn record_run(sb: &Sandbox, ts: i64, cmd: &str, cwd: &str, exit: i32) {
+    let (ts, exit) = (ts.to_string(), exit.to_string());
+    let code = sb.wib(&["record", "--ts", &ts, "--exit", &exit, "--cwd", cwd, "--", cmd]).1;
+    assert_eq!(code, 0);
+}
+
+fn lines(out: &str) -> Vec<&str> {
+    out.lines().collect()
+}
+
+#[test]
+fn cwd_prefers_commands_from_the_same_project() {
+    let sb = Sandbox::new("cwd", &[]);
+    let repo = sb.data().join("repo");
+    fs::create_dir_all(repo.join(".git")).unwrap();
+    fs::create_dir_all(repo.join("sub")).unwrap();
+    let repo_s = repo.to_string_lossy().into_owned();
+    let n = now();
+    record_run(&sb, n - 100, "make test", &format!("{repo_s}/sub"), 0);
+    for i in 0..3 {
+        record_run(&sb, n - 50 - i, "make build", "/elsewhere", 0);
+    }
+    let (out, _) = sb.wib(&["query", "--cwd", &repo_s, "--", "make"]);
+    assert_eq!(lines(&out), ["make test", "make build"]);
+    // Any directory inside the project counts, since the git root is the scope.
+    let (out, _) = sb.wib(&["query", "--cwd", &format!("{repo_s}/sub"), "--", "make"]);
+    assert_eq!(lines(&out), ["make test", "make build"]);
+    let (out, _) = sb.wib(&["query", "--", "make"]);
+    assert_eq!(lines(&out), ["make build", "make test"]);
+    // Bare keyword search reads $PWD.
+    let (out, _) = wib_env(&sb, &["make"], &[("PWD", &repo_s)]);
+    assert_eq!(out, ["make test", "make build"]);
+    let (out, _) = wib_env(&sb, &["make"], &[("PWD", "/elsewhere")]);
+    assert_eq!(out, ["make build", "make test"]);
+}
+
+#[test]
+fn never_successful_commands_rank_last() {
+    let sb = Sandbox::new("failed", &[]);
+    let n = now();
+    record_run(&sb, n - 60, "gti status", "/", 127);
+    record_run(&sb, n - 60, "git status", "/", 0);
+    record_run(&sb, n - 30, "gti status", "/", 127);
+    let (out, _) = sb.wib(&["query", "--", "g"]);
+    assert_eq!(lines(&out), ["git status", "gti status"]);
+}
+
+#[test]
+fn forget_removes_a_command_from_every_lookup() {
+    let n = now();
+    let sb = Sandbox::new(
+        "forget",
+        &[
+            (n - 60, "git push --force"),
+            (n - 50, "git push origin"),
+            (n - 40, "echo \"a b\""),
+            (n - 35, "wib forget git push --force"),
+            (n - 30, "printf a\\\nb"),
+        ],
+    );
+    let (out, code) = sb.wib(&["forget", "git", "push", "--force"]);
+    assert_eq!((out.as_str(), code), ("forgot: git push --force\n", 0));
+    let (out, code) = sb.wib(&["forget", "git push --force"]);
+    assert_eq!((out.as_str(), code), ("already forgotten: git push --force\n", 0));
+    let file = sb.data().join("data/forget");
+    assert_eq!(fs::read_to_string(&file).unwrap(), "git push --force\n");
+    let mode = fs::metadata(&file).unwrap().permissions().mode() & 0o777;
+    assert_eq!(mode, 0o600);
+
+    assert_eq!(sb.query("30d", "git"), ["git push origin"]);
+    assert_eq!(wib_env(&sb, &["push"], &[]).0, ["git push origin"]);
+    let (out, _) = sb.wib(&["query", "--keywords", "--", "force"]);
+    assert_eq!(out, "");
+    // The `wib forget ...` line itself holds the forgotten command.
+    assert!(sb.query("30d", "wib").is_empty());
+
+    sb.wib(&["forget", "echo \"a b\""]);
+    assert!(sb.query("30d", "echo").is_empty());
+    // .zsh_history stores the newline as a trailing backslash.
+    sb.wib(&["forget", "--", "printf a\nb"]);
+    assert!(sb.query("30d", "printf").is_empty());
+}
+
+#[test]
+fn forget_needs_a_command_and_double_dash_searches_the_word() {
+    let n = now();
+    let sb = Sandbox::new("forgetargs", &[(n - 60, "echo forget me")]);
+    assert_eq!(sb.wib(&["forget"]).1, 2);
+    assert_eq!(sb.wib(&["forget", "--", "  "]).1, 2);
+    assert!(!sb.data().join("data/forget").exists());
+    assert_eq!(wib_env(&sb, &["--", "forget"], &[]), (vec!["echo forget me".to_string()], 0));
 }

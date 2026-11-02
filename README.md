@@ -35,7 +35,8 @@ Type `dcup` and you get `docker compose up`. Press ↓ and Enter and it runs.
 
 - ⚡ **Instant**: about 5–8 ms per lookup on ~10k commands, including process startup.
 - 🧠 **Smart matching**: prefix first, then word-initial fuzzy (`gi st` → `git status`).
-- 🎯 **Ranked by you**: frequent and recent commands rise to the top, and duplicates collapse to one line.
+- 🎯 **Ranked by you**: frequent and recent commands rise to the top, and by the project you're in; duplicates
+  collapse to one line, and typos that never worked sink to the bottom.
 - 🪶 **Featherweight**: one small Rust binary with zero dependencies, no daemon, no database server.
 - 🔒 **Private by design**: no cloud, no telemetry, the log is owner-only (0600), and it respects `HISTORY_IGNORE`.
 - 🤝 **Plays nice**: works with oh-my-zsh, powerlevel10k, zsh-autosuggestions and vi mode.
@@ -56,6 +57,14 @@ Open a new terminal. That's it.
   `gi st` → `git status`). Each chunk you type must be the start of a word in the command; letters
   scattered across the middle of words don't count.
 - Results are ranked by how often and how recently you used them; duplicate commands appear once.
+- Among equally good matches, commands you ran in the current project come first: anywhere inside the
+  same git repository (the nearest folder with `.git`), or the current folder outside git. A `.git` in your
+  home folder is ignored, so a dotfiles repo doesn't turn your whole home into one project. Leave the
+  project and the order goes back to normal.
+- Commands that have never succeeded (`gti status`, a wrong flag) rank after equally good matches that
+  did. They are not hidden. Exit codes 130 (Ctrl-C), 141 (broken pipe), 143 (terminated) and 148 (Ctrl-Z)
+  don't count as failures, and commands known only from `~/.zsh_history` (no exit code) are never treated
+  as failed.
 - Suggestions come from the last 30 days by default (see `WIB_PERIOD`).
 - Your data never leaves your machine.
 
@@ -148,6 +157,24 @@ PROMPT> wib pull,master          PROMPT> wib pull
   the whole line with the selected command and runs it; Tab fills the command; Shift+Tab fills it word by word from the start.
 - Pressing Enter with no line selected runs `wib pull,master` as a command and prints the list to the terminal.
 
+## Forgetting a suggestion
+
+To stop wib from suggesting a command (one containing a token, or one that is simply wrong), forget it:
+
+```sh
+wib forget 'git push --force'
+```
+
+- The command must match exactly (leading and trailing spaces are ignored). Quote it so the shell keeps
+  its spacing and special characters; unquoted words are joined with single spaces.
+- Forgotten commands disappear from the live list, `wib query` and `wib <keywords>`. The `wib forget ...`
+  line itself is never suggested either.
+- They are stored one per line in `~/.local/share/wib/forget` (under `WIB_DATA_DIR`), readable only by you.
+  There is no `unforget`: to bring a command back, delete its line from that file.
+- `wib forget` doesn't touch `~/.zsh_history` or wib's log, and the `wib forget ...` line is itself saved
+  to `~/.zsh_history`. For a secret, start the line with a space (` wib forget '...'`) so that, with
+  `setopt HIST_IGNORE_SPACE`, it isn't saved; then remove the original line from `~/.zsh_history` by hand.
+
 ## Configuration
 
 Set environment variables in `~/.zshrc`:
@@ -158,7 +185,7 @@ Set environment variables in `~/.zshrc`:
 | `WIB_LIMIT` | `8` | Maximum number of lines in the list |
 | `WIB_MIN_CHARS` | `2` | Minimum characters before the list appears |
 | `WIB_ZSH_HISTORY` | `$HISTFILE` | zsh history file |
-| `WIB_DATA_DIR` | `~/.local/share/wib` | Where wib keeps its own log |
+| `WIB_DATA_DIR` | `~/.local/share/wib` | Where wib keeps its own log and the forget list |
 
 ## Where your data lives
 
@@ -215,6 +242,11 @@ if you type tens of thousands of commands within one period; in that case, lower
 Keyword mode (`bench.sh … keywords`) has a p95 comparable to normal mode: 7–10 ms on the
 100,000-command, 400-day file.
 
+Project ranking (`--cwd`, which `bench.sh` passes like the widget does; `WIB_BENCH_CWD=0` leaves it out)
+costs no measurable time: on the 100,000-command, 400-day file, two interleaved runs gave a p95 of
+8.1 and 7.6 ms with it versus 7.8 and 8.3 ms without. Finding the project checks for `.git` in each
+parent folder, so on a slow network filesystem that check can add a few milliseconds.
+
 ## Using it with other plugins
 
 - **zsh-autosuggestions:** the grey hint still appears; pressing → accepts only that hint, and wib's list is never pasted into the command line.
@@ -236,11 +268,16 @@ Keyword mode (`bench.sh … keywords`) has a p95 comparable to normal mode: 7–
 
 ```sh
 wib pull,master                   # keyword search, any order
-wib -- init                       # search for text that collides with a subcommand (init, query, record)
+wib -- forget                     # search for text that collides with a subcommand (forget, init, query, record)
+wib forget 'git push --force'     # never suggest this command again
 wib query --period 7d -- dcup     # print matching commands, one per line
+wib query --cwd "$PWD" -- make    # prefer commands run in this directory's project
 wib query --keywords -- pull,master
 wib query -0 -- git               # NUL-separated output, preserves multi-line commands
 ```
+
+`wib query` ranks by project only when given `--cwd`; the zsh widget always passes `$PWD`, and
+`wib <keywords>` uses the current directory.
 
 `wib <keywords>` takes its period and line count from `WIB_PERIOD` and `WIB_LIMIT`, and reads history from
 `WIB_ZSH_HISTORY` or `~/.zsh_history`. Variables set in `~/.zshrc` without `export` aren't visible to this

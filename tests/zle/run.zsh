@@ -219,6 +219,29 @@ send 'wib nginx'; send $'\r'; more
 reset_line; send 'gi'; probe
 check "keywords: normal typing unchanged" "gi|typing|3" "$REPLY"
 
+# ---------------------------------------------------------------- project ranking and forget
+
+mkdir -p $tmp/r1/.git $tmp/r2/.git
+start_shell "path=('${wib:h}' \$path); export WIB_ZSH_HISTORY=$tmp/zsh_history"
+send "cd $tmp/r1"; send $'\r'; more
+send 'echo mark-r1'; send $'\r'; more
+send "cd $tmp/r2"; send $'\r'; more
+send 'echo mark-r2'; send $'\r'; more
+send "cd $tmp/r1"; send $'\r'; more
+sleep 0.3
+send 'echo mark'; send $'\e[B'; send $'\t'; buffer
+check "project: this repo's command comes first" "echo mark-r1" "$REPLY"
+reset_line; send "cd $tmp/r2"; send $'\r'; more
+send 'echo mark'; send $'\e[B'; send $'\t'; buffer
+check "project: changing repo changes the first row" "echo mark-r2" "$REPLY"
+reset_line; send 'wib forget echo mark-r2'; send $'\r'; more
+sleep 0.3
+send 'echo mark'; probe
+check "forget: the command leaves the list" "echo mark|typing|1" "$REPLY"
+reset_line; send 'wib forget gi'; probe
+check "forget: wib forget is not a keyword search" "wib forget gi|typing|0" "$REPLY"
+reset_line
+
 # ---------------------------------------------------------------- vi mode
 
 start_shell 'bindkey -v'
