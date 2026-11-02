@@ -42,12 +42,8 @@ Type `dcup` and you get `docker compose up`. Press ↓ and Enter and it runs.
 - 🤝 **Plays nice**: works with oh-my-zsh, powerlevel10k, zsh-autosuggestions and vi mode.
 - 🔁 **Works on day one**: your existing `~/.zsh_history` powers suggestions immediately.
 
-```sh
-git clone https://github.com/duylongpro99/wuts-that-bash.git && cd wuts-that-bash
-cargo install --path . && echo 'eval "$(wib init zsh)"' >> ~/.zshrc
-```
-
-Open a new terminal. That's it.
+Download a prebuilt binary from [Releases](https://github.com/duylongpro99/wuts-that-bash/releases), or see
+[Installation](#installation). Open a new terminal. That's it.
 
 ---
 
@@ -92,15 +88,31 @@ Open a new terminal. That's it.
 
 ## Installation
 
-Requires zsh ≥ 5.3 and Rust ≥ 1.89.
+Requires zsh ≥ 5.3.
+
+**Prebuilt binary (macOS, Linux).** Each [release](https://github.com/duylongpro99/wuts-that-bash/releases) has
+`wib-<target>.tar.gz` plus a `.sha256` checksum for `aarch64-apple-darwin` (Apple Silicon), `x86_64-apple-darwin`
+(Intel Mac), `x86_64-unknown-linux-musl` and `aarch64-unknown-linux-musl`. For example, on Apple Silicon:
 
 ```sh
-cargo install --path .
+curl -fsSL https://github.com/duylongpro99/wuts-that-bash/releases/download/v0.1.0/wib-aarch64-apple-darwin.tar.gz | tar -xz
+mkdir -p ~/.local/bin && mv wib-aarch64-apple-darwin/wib ~/.local/bin/
 ```
 
-Add this to the **end** of `~/.zshrc` (after oh-my-zsh and other plugins):
+If you downloaded the archive with a browser on macOS, clear the quarantine flag once:
+`xattr -d com.apple.quarantine ~/.local/bin/wib`.
+
+**From source** (Rust ≥ 1.89):
+
+```sh
+cargo install --git https://github.com/duylongpro99/wuts-that-bash
+```
+
+Then add this to the **end** of `~/.zshrc` (after oh-my-zsh and other plugins). Skip the `PATH` line if
+`~/.local/bin` is already on your `PATH` or you installed with cargo:
 
 ```zsh
+export PATH="$HOME/.local/bin:$PATH"
 eval "$(wib init zsh)"
 ```
 
@@ -255,7 +267,7 @@ parent folder, so on a slow network filesystem that check can add a few millisec
 ## Known limitations
 
 - zsh only; bash and fish are not supported yet.
-- Installation requires a Rust toolchain; there's no Homebrew formula or prebuilt binary yet.
+- No Homebrew formula yet; install a prebuilt binary from Releases or build with cargo.
 - No history sync between machines.
 - wib assumes `~/.zsh_history` is written in chronological order (with up to one day of skew allowed, such as
   when `sharehistory` writes a long-running command after newer ones). If you append a history file from
@@ -289,11 +301,15 @@ command, so if you change those values (or use a different `HISTFILE`), `export`
 Remove the `eval "$(wib init zsh)"` line from `~/.zshrc`, then:
 
 ```sh
-cargo uninstall wib
+rm ~/.local/bin/wib        # prebuilt binary; use `cargo uninstall wib` if you installed with cargo
 rm -rf ~/.local/share/wib
 ```
 
 ## Development
+
+Releases: push a tag matching the `Cargo.toml` version (`git tag v0.1.0 && git push origin v0.1.0`) and
+`.github/workflows/release.yml` tests, builds the four targets and publishes the GitHub Release. The landing
+page lives in `site/` (static, no build step); its download links name the tag, so update them on each release.
 
 ```sh
 cargo test                                   # unit + CLI tests
