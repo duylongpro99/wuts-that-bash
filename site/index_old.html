@@ -1,0 +1,594 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>wib · zsh history as you type</title>
+<meta name="description" content="wib shows the commands you already ran, right under your zsh prompt, as you type. One small Rust binary, no daemon, 100% local.">
+<meta property="og:title" content="wib · what is that bash?">
+<meta property="og:description" content="Type two letters and the command you ran last Tuesday is already under your cursor.">
+<meta name="theme-color" content="#14171d">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%2314171d'/%3E%3Cpath d='M8 11l6 5-6 5' stroke='%23f0b44c' stroke-width='3' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3Cpath d='M17 22h7' stroke='%23e8ebf2' stroke-width='3' stroke-linecap='round'/%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600&family=Newsreader:opsz,wght@6..72,500&family=Schibsted+Grotesk:wght@400;600&display=swap" rel="stylesheet">
+<style>
+:root {
+  --hue: 255;
+  --accent-hue: 75;
+
+  --paper: oklch(17% 0.014 var(--hue));
+  --paper-2: oklch(21% 0.016 var(--hue));
+  --paper-3: oklch(25% 0.018 var(--hue));
+  --line: oklch(31% 0.018 var(--hue));
+  --ink: oklch(94% 0.008 var(--hue));
+  --ink-2: oklch(80% 0.012 var(--hue));
+  --ink-3: oklch(68% 0.014 var(--hue));
+
+  --accent: oklch(82% 0.14 var(--accent-hue));
+  --accent-ink: oklch(20% 0.03 var(--accent-hue));
+  --accent-soft: oklch(82% 0.14 var(--accent-hue) / 0.14);
+  --ok: oklch(80% 0.13 150);
+
+  --font-display: "Newsreader", Georgia, serif;
+  --font-body: "Schibsted Grotesk", system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+
+  --step--1: clamp(0.83rem, 0.8rem + 0.15vw, 0.9rem);
+  --step-0: clamp(1rem, 0.96rem + 0.2vw, 1.125rem);
+  --step-1: clamp(1.25rem, 1.15rem + 0.45vw, 1.5rem);
+  --step-2: clamp(1.56rem, 1.38rem + 0.9vw, 2rem);
+  --step-3: clamp(1.95rem, 1.6rem + 1.7vw, 2.75rem);
+  --step-5: clamp(2.6rem, 1.6rem + 4vw, 4.5rem);
+  --mono-size: clamp(0.8rem, 0.76rem + 0.2vw, 0.92rem);
+  --tracking-display: -0.025em;
+  --leading-display: 1.05;
+  --leading-body: 1.6;
+  --measure: 60ch;
+
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 24px;
+  --space-6: 32px;
+  --space-7: 48px;
+  --space-8: 64px;
+  --space-9: 96px;
+  --section-y: clamp(64px, 6vw + 32px, 144px);
+  --gutter: clamp(16px, 4vw, 48px);
+  --container: 1160px;
+
+  --radius: 10px;
+  --radius-sm: 6px;
+
+  --dur-press: 120ms;
+  --dur-state: 220ms;
+  --ease-out: cubic-bezier(0.25, 1, 0.5, 1);
+}
+@media (prefers-reduced-motion: reduce) {
+  :root { --dur-press: 0ms; --dur-state: 0ms; }
+}
+
+*, *::before, *::after { box-sizing: border-box; }
+html { color-scheme: dark; scroll-behavior: smooth; }
+@media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } }
+body {
+  margin: 0;
+  font: 400 var(--step-0) / var(--leading-body) var(--font-body);
+  color: var(--ink);
+  background: var(--paper);
+  -webkit-font-smoothing: antialiased;
+  overflow-x: hidden;
+}
+h1, h2, h3 {
+  font-family: var(--font-display);
+  font-weight: 500;
+  line-height: var(--leading-display);
+  letter-spacing: var(--tracking-display);
+  text-wrap: balance;
+  margin: 0;
+}
+p { margin: 0; max-width: var(--measure); text-wrap: pretty; color: var(--ink-2); }
+a { color: inherit; }
+code, pre, kbd { font-family: var(--font-mono); font-size: var(--mono-size); }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; border-radius: 4px; }
+
+.wrap { width: 100%; max-width: var(--container); margin: 0 auto; padding: 0 var(--gutter); }
+section { padding: var(--section-y) 0; }
+section + section { border-top: 1px solid var(--line); }
+.lede { font-size: var(--step-1); color: var(--ink-2); line-height: 1.45; }
+.inline { color: var(--ink); background: var(--paper-3); padding: 1px 6px; border-radius: 4px; white-space: nowrap; }
+
+/* Nav */
+.nav { display: flex; align-items: center; justify-content: space-between; gap: var(--space-5); height: 68px; }
+.brand { display: inline-flex; align-items: center; gap: var(--space-2); font-family: var(--font-mono); font-weight: 600; text-decoration: none; font-size: 1.05rem; min-height: 44px; }
+.brand b { color: var(--accent); font-weight: 600; }
+.nav ul { display: flex; gap: var(--space-2); list-style: none; margin: 0; padding: 0; }
+.nav a.link {
+  display: inline-flex; align-items: center; min-height: 44px; padding: 0 var(--space-3);
+  color: var(--ink-2); text-decoration: none; font-size: var(--step--1);
+  transition: color var(--dur-state) var(--ease-out);
+}
+.nav a.link:hover { color: var(--ink); }
+@media (max-width: 560px) { .nav li.opt { display: none; } }
+
+/* Buttons */
+.btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: var(--space-2);
+  min-height: 48px; padding: 0 var(--space-5); border-radius: var(--radius-sm);
+  font: 600 var(--step--1) / 1 var(--font-body); text-decoration: none; cursor: pointer;
+  border: 1px solid transparent;
+  transition: transform var(--dur-press) var(--ease-out), background-color var(--dur-state) var(--ease-out), border-color var(--dur-state) var(--ease-out);
+}
+.btn:active { transform: translateY(1px); }
+.btn-primary { background: var(--accent); color: var(--accent-ink); }
+.btn-primary:hover { background: oklch(86% 0.14 var(--accent-hue)); }
+.btn-ghost { border-color: var(--line); color: var(--ink); }
+.btn-ghost:hover { border-color: var(--ink-3); }
+.btn svg { width: 16px; height: 16px; transition: transform var(--dur-state) var(--ease-out); }
+.btn:hover svg { transform: translateY(2px); }
+
+/* Hero */
+.hero { padding: clamp(40px, 6vw, 96px) 0 var(--section-y); border-top: 0; }
+.hero-grid { display: grid; grid-template-columns: 1fr; gap: var(--space-8); align-items: center; }
+@media (min-width: 960px) { .hero-grid { grid-template-columns: 1.05fr 1fr; gap: var(--space-7); } }
+.hero h1 { font-size: var(--step-5); max-width: 15ch; }
+.hero h1 em { font-style: italic; color: var(--accent); }
+.hero .lede { margin-top: var(--space-5); max-width: 40ch; }
+.cta { display: flex; flex-wrap: wrap; gap: var(--space-3); margin-top: var(--space-6); }
+.facts { display: flex; flex-wrap: wrap; gap: var(--space-2) var(--space-5); margin: var(--space-6) 0 0; padding: 0; list-style: none; font-size: var(--step--1); color: var(--ink-3); }
+.facts li::before { content: "·"; margin-right: var(--space-2); color: var(--ink-3); }
+.facts li:first-child::before { content: none; }
+
+/* Terminal */
+.term {
+  background: oklch(13% 0.012 var(--hue));
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  overflow: hidden;
+  min-width: 0;
+}
+.term-bar { display: flex; align-items: center; gap: 6px; padding: var(--space-3) var(--space-4); border-bottom: 1px solid var(--line); }
+.term-bar i { width: 10px; height: 10px; border-radius: 50%; background: var(--paper-3); }
+.term-bar span { margin-left: var(--space-3); font: 400 0.75rem var(--font-mono); color: var(--ink-3); }
+.term-body { padding: var(--space-5); font-family: var(--font-mono); font-size: var(--mono-size); line-height: 1.75; min-height: 15.5em; }
+.term-body .line { white-space: pre; overflow: hidden; text-overflow: ellipsis; }
+.term-body .dim { color: var(--ink-3); }
+.term-body .prompt { color: var(--ok); }
+.cursor { display: inline-block; width: 0.6em; height: 1.15em; vertical-align: -0.2em; background: var(--accent); margin-left: 1px; }
+@media (prefers-reduced-motion: no-preference) { .cursor { animation: blink 1.1s steps(1) infinite; } }
+@keyframes blink { 50% { opacity: 0; } }
+.sugg { list-style: none; margin: 0; padding: 0; }
+.sugg li { white-space: pre; overflow: hidden; text-overflow: ellipsis; color: var(--ink-2); }
+.sugg li::before { content: "  "; }
+.sugg li.sel { color: var(--accent); }
+.sugg li.sel::before { content: "› "; }
+.sugg mark { background: none; color: var(--ink); font-weight: 600; }
+.sugg li.sel mark { color: var(--accent); }
+.term-caption { margin-top: var(--space-3); font-size: var(--step--1); color: var(--ink-3); min-height: 1.6em; }
+
+/* Section heads */
+.head { display: grid; align-content: start; gap: var(--space-4); margin-bottom: var(--space-8); }
+.head h2 { font-size: var(--step-3); max-width: 18ch; }
+
+/* Matching */
+.match { display: grid; grid-template-columns: 1fr; border-top: 1px solid var(--line); margin: 0; }
+.match > div { display: grid; grid-template-columns: 1fr; gap: var(--space-2); padding: var(--space-5) 0; border-bottom: 1px solid var(--line); }
+@media (min-width: 760px) { .match > div { grid-template-columns: 9rem minmax(0, 1fr) minmax(0, 1.1fr); gap: var(--space-6); align-items: baseline; } }
+.match dt { font-family: var(--font-mono); font-size: var(--mono-size); color: var(--accent); }
+.match dd { margin: 0; min-width: 0; }
+.match dd.to { font-family: var(--font-mono); font-size: var(--mono-size); color: var(--ink); overflow-wrap: anywhere; }
+.match dd.why { color: var(--ink-3); font-size: var(--step--1); }
+
+/* Ranking split */
+.split { display: grid; grid-template-columns: 1fr; gap: var(--space-7); }
+@media (min-width: 900px) { .split { grid-template-columns: 0.9fr 1.1fr; gap: var(--space-9); } }
+.points { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--space-6); }
+.points h3 { font-size: var(--step-1); margin-bottom: var(--space-2); }
+
+/* Comparison */
+.table-scroll { overflow-x: auto; border: 1px solid var(--line); border-radius: var(--radius); }
+table { width: 100%; border-collapse: collapse; font-size: var(--step--1); min-width: 560px; }
+th, td { text-align: left; padding: var(--space-4) var(--space-5); border-bottom: 1px solid var(--line); vertical-align: top; }
+thead th { color: var(--ink-3); font-weight: 400; background: var(--paper-2); }
+tbody tr:last-child td, tbody tr:last-child th { border-bottom: 0; }
+tbody th { font-weight: 600; color: var(--ink); }
+tbody tr.us th, tbody tr.us td { color: var(--ink); background: var(--accent-soft); }
+td { color: var(--ink-2); }
+
+/* Numbers */
+.nums { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: var(--space-6); margin: 0; }
+.nums div { border-top: 1px solid var(--line); padding-top: var(--space-4); }
+.nums dt { font-family: var(--font-display); font-size: var(--step-3); color: var(--ink); line-height: 1.1; font-variant-numeric: tabular-nums; }
+.nums dd { margin: var(--space-2) 0 0; color: var(--ink-3); font-size: var(--step--1); max-width: 30ch; }
+.source { margin-top: var(--space-6); font-size: var(--step--1); color: var(--ink-3); }
+
+/* Install */
+.install-grid { display: grid; grid-template-columns: 1fr; gap: var(--space-7); }
+@media (min-width: 960px) { .install-grid { grid-template-columns: 0.75fr 1.25fr; gap: var(--space-9); } }
+.install-grid > * { min-width: 0; }
+fieldset { border: 0; margin: 0 0 var(--space-6); padding: 0; }
+legend { font-size: var(--step--1); color: var(--ink-3); margin-bottom: var(--space-3); padding: 0; }
+.platforms { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-2); }
+@media (min-width: 640px) { .platforms { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
+.platforms input { position: absolute; opacity: 0; pointer-events: none; }
+.platforms label {
+  display: flex; flex-direction: column; justify-content: center; min-height: 64px; padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--line); border-radius: var(--radius-sm); cursor: pointer; font-size: var(--step--1);
+  transition: border-color var(--dur-state) var(--ease-out), background-color var(--dur-state) var(--ease-out);
+}
+.platforms label small { color: var(--ink-3); font-size: 0.78rem; }
+.platforms label:hover { border-color: var(--ink-3); }
+.platforms input:checked + label { border-color: var(--accent); background: var(--accent-soft); }
+.platforms input:focus-visible + label { outline: 2px solid var(--accent); outline-offset: 3px; }
+
+.steps { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--space-6); counter-reset: step; }
+.steps > li { counter-increment: step; display: grid; grid-template-columns: 2rem minmax(0, 1fr); gap: var(--space-3); }
+.steps > li::before { content: counter(step); font-family: var(--font-display); font-size: var(--step-1); color: var(--accent); line-height: 1.3; }
+.steps h3 { font-family: var(--font-body); font-weight: 600; font-size: var(--step-0); letter-spacing: 0; line-height: 1.4; margin-bottom: var(--space-2); }
+.steps p { font-size: var(--step--1); }
+.steps .btn { margin-top: var(--space-3); }
+
+.code { position: relative; margin-top: var(--space-3); }
+.code pre {
+  margin: 0; padding: var(--space-4) 56px var(--space-4) var(--space-4); overflow-x: auto;
+  background: oklch(13% 0.012 var(--hue)); border: 1px solid var(--line); border-radius: var(--radius-sm);
+  line-height: 1.7; color: var(--ink);
+}
+.code pre .c { color: var(--ink-3); }
+.copy {
+  position: absolute; top: 6px; right: 6px; width: 44px; height: 44px; display: grid; place-items: center;
+  background: transparent; border: 0; border-radius: var(--radius-sm); color: var(--ink-3); cursor: pointer;
+  transition: color var(--dur-state) var(--ease-out), background-color var(--dur-state) var(--ease-out);
+}
+.copy:hover { color: var(--ink); background: var(--paper-3); }
+.copy svg { width: 18px; height: 18px; }
+.copy .done { display: none; color: var(--ok); }
+.copy[data-state="done"] .idle { display: none; }
+.copy[data-state="done"] .done { display: block; }
+.copy[data-state="error"] { color: oklch(72% 0.16 25); }
+
+.pkg { display: none; }
+#install:has(#p-mac-arm:checked) .pkg[data-p="mac-arm"],
+#install:has(#p-mac-x64:checked) .pkg[data-p="mac-x64"],
+#install:has(#p-linux-x64:checked) .pkg[data-p="linux-x64"],
+#install:has(#p-linux-arm:checked) .pkg[data-p="linux-arm"] { display: block; }
+.note { margin-top: var(--space-3); font-size: var(--step--1); color: var(--ink-3); }
+.note code { font-size: 0.85em; }
+.note .inline { white-space: normal; overflow-wrap: anywhere; }
+.release-links { display: flex; flex-wrap: wrap; gap: var(--space-2) var(--space-5); margin-top: var(--space-6); font-size: var(--step--1); }
+.release-links a { color: var(--ink-2); text-underline-offset: 3px; display: inline-flex; align-items: center; min-height: 44px; }
+.release-links a:hover { color: var(--ink); }
+
+/* Keys */
+.keys { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: var(--space-5) var(--space-7); margin: 0; }
+.keys div { display: grid; grid-template-columns: 6.5rem minmax(0, 1fr); gap: var(--space-3); align-items: baseline; }
+.keys dt { margin: 0; }
+.keys dd { margin: 0; color: var(--ink-2); font-size: var(--step--1); }
+kbd { display: inline-block; padding: 2px 8px; border: 1px solid var(--line); border-bottom-width: 2px; border-radius: 5px; color: var(--ink); background: var(--paper-2); font-size: 0.8rem; }
+
+/* Footer */
+footer { border-top: 1px solid var(--line); padding: var(--space-7) 0; font-size: var(--step--1); color: var(--ink-3); }
+footer .wrap { display: flex; flex-wrap: wrap; justify-content: space-between; gap: var(--space-4); }
+footer a { color: var(--ink-2); text-underline-offset: 3px; display: inline-flex; align-items: center; min-height: 44px; }
+footer .wrap > span { display: inline-flex; align-items: center; min-height: 44px; }
+footer ul { display: flex; flex-wrap: wrap; gap: var(--space-5); list-style: none; margin: 0; padding: 0; }
+</style>
+</head>
+<body>
+
+<header class="wrap">
+  <nav class="nav" aria-label="Main">
+    <a class="brand" href="#top" aria-label="wib home"><b>›</b>wib</a>
+    <ul>
+      <li class="opt"><a class="link" href="#how">How it matches</a></li>
+      <li class="opt"><a class="link" href="#compare">Compare</a></li>
+      <li><a class="link" href="#install">Install</a></li>
+      <li><a class="link" href="https://github.com/duylongpro99/wuts-that-bash">GitHub</a></li>
+    </ul>
+  </nav>
+</header>
+
+<main id="top">
+  <section class="hero">
+    <div class="wrap hero-grid">
+      <div>
+        <h1>The command you ran last week, <em>before you ask.</em></h1>
+        <p class="lede">Type two letters and wib lists the zsh commands you already ran, right under your prompt. Press <kbd>↓</kbd> then <kbd>Enter</kbd> to run one.</p>
+        <div class="cta">
+          <a class="btn btn-primary" href="#install">Install wib
+            <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 2v10M3.5 8 8 12.5 12.5 8"/></svg>
+          </a>
+          <a class="btn btn-ghost" href="https://github.com/duylongpro99/wuts-that-bash">View source</a>
+        </div>
+        <ul class="facts" aria-label="Facts">
+          <li>zsh 5.3+</li><li>macOS and Linux</li><li>No daemon</li><li>100% local</li><li>MIT</li>
+        </ul>
+      </div>
+
+      <div>
+        <div class="term" role="img" aria-label="Demo: typing gi in zsh lists git push origin master, git status and git commit -m &quot;fix bug&quot; below the prompt">
+          <div class="term-bar" aria-hidden="true"><i></i><i></i><i></i><span>zsh</span></div>
+          <div class="term-body" aria-hidden="true">
+            <div class="line dim">~/code/api on main</div>
+            <div class="line"><span class="prompt">❯ </span><span id="demo-input">gi</span><span class="cursor"></span></div>
+            <ul class="sugg" id="demo-list">
+              <li><mark>gi</mark>t push origin master</li>
+              <li><mark>gi</mark>t status</li>
+              <li><mark>gi</mark>t commit -m "fix bug"</li>
+            </ul>
+          </div>
+        </div>
+        <p class="term-caption" id="demo-caption" aria-live="off">Prefix match: your most used git commands come first.</p>
+      </div>
+    </div>
+  </section>
+
+  <section id="how">
+    <div class="wrap">
+      <div class="head">
+        <h2>Type less, still land on the right command</h2>
+        <p class="lede">Prefix matches come first, then the first letters of each word. Letters scattered through the middle of words don't count, so the list stays short.</p>
+      </div>
+      <dl class="match">
+        <div><dt>gi</dt><dd class="to">git push origin master</dd><dd class="why">Prefix. The commands you start most often rise to the top.</dd></div>
+        <div><dt>dcup</dt><dd class="to">docker compose up</dd><dd class="why">Word starts: <b>d</b>ocker <b>c</b>ompose <b>up</b>.</dd></div>
+        <div><dt>gi st</dt><dd class="to">git status</dd><dd class="why">Each chunk you type must start a word in the command.</dd></div>
+        <div><dt>wib pull,master</dt><dd class="to">git pull origin master</dd><dd class="why">Keyword search. Remember a few words, in any order.</dd></div>
+      </dl>
+    </div>
+  </section>
+
+  <section>
+    <div class="wrap split">
+      <div class="head" style="margin-bottom:0">
+        <h2>Ranked by how you actually work</h2>
+        <p class="lede">Duplicates collapse to one line. What you reach for most is what you see first.</p>
+      </div>
+      <ul class="points">
+        <li>
+          <h3>Often and recently</h3>
+          <p>Frequency and recency decide the order. Suggestions come from the last 30 days by default, set with <code class="inline">WIB_PERIOD</code>.</p>
+        </li>
+        <li>
+          <h3>Your project first</h3>
+          <p>Among equally good matches, commands you ran inside the current git repository come first. Leave the project and the order goes back to normal.</p>
+        </li>
+        <li>
+          <h3>Typos sink</h3>
+          <p>A command that never succeeded, like <code class="inline">gti status</code>, ranks after matches that did. It isn't hidden, and Ctrl-C doesn't count as a failure.</p>
+        </li>
+      </ul>
+    </div>
+  </section>
+
+  <section id="compare">
+    <div class="wrap">
+      <div class="head">
+        <h2>Suggestions that appear on their own</h2>
+        <p class="lede">Ctrl-R and fzf make you stop and open a search. wib refines a list with every keystroke, and your keys keep working as before until you press <kbd>↓</kbd>.</p>
+      </div>
+      <div class="table-scroll" role="region" aria-label="Comparison with other tools" tabindex="0">
+        <table>
+          <thead><tr><th scope="col">Tool</th><th scope="col">How you invoke it</th><th scope="col">Suggestions</th><th scope="col">Multi-machine sync</th></tr></thead>
+          <tbody>
+            <tr class="us"><th scope="row">wib</th><td>Appears as you type</td><td>Several lines, right under the prompt</td><td>No, local only</td></tr>
+            <tr><th scope="row">zsh-autosuggestions</th><td>Appears as you type</td><td>One grey hint</td><td>No</td></tr>
+            <tr><th scope="row">Ctrl-R / fzf</th><td>Press a key to open</td><td>Search list</td><td>No</td></tr>
+            <tr><th scope="row">atuin</th><td>Press a key to open</td><td>Search list</td><td>Yes</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p class="note">wib runs alongside oh-my-zsh, powerlevel10k, zsh-autosuggestions and vi mode.</p>
+    </div>
+  </section>
+
+  <section>
+    <div class="wrap">
+      <div class="head">
+        <h2>Fast enough to run on every keystroke</h2>
+        <p class="lede">Each lookup is a short-lived process that reads your history and exits. No index, no daemon, nothing that grows while your terminal stays open.</p>
+      </div>
+      <dl class="nums">
+        <div><dt>5.4 ms</dt><dd>p95 lookup on 10,000 commands, process startup included</dd></div>
+        <div><dt>8.8 ms</dt><dd>p95 lookup on 100,000 commands over 400 days</dd></div>
+        <div><dt>~2 MB</dt><dd>peak memory per lookup on the 10,000-command file</dd></div>
+        <div><dt>0600</dt><dd>file mode of wib's log. Nothing leaves your machine.</dd></div>
+      </dl>
+      <p class="source">Measured with <code class="inline">scripts/bench.sh</code> on macOS, 100 lookups per file, <code class="inline">WIB_PERIOD=30d</code>.</p>
+    </div>
+  </section>
+
+  <section id="install">
+    <div class="wrap install-grid">
+      <div class="head" style="margin-bottom:0">
+        <h2>Install in a minute</h2>
+        <p class="lede">Prebuilt binaries from the <a href="https://github.com/duylongpro99/wuts-that-bash/releases/tag/v0.1.0">v0.1.0 release</a>. No Rust toolchain needed.</p>
+        <p class="note">Requires zsh 5.3 or newer. Your existing <code class="inline">~/.zsh_history</code> works from the first prompt.</p>
+      </div>
+
+      <div>
+        <fieldset>
+          <legend>Choose your platform</legend>
+          <div class="platforms">
+            <input type="radio" name="platform" id="p-mac-arm" value="mac-arm" checked>
+            <label for="p-mac-arm">macOS<small>Apple Silicon</small></label>
+            <input type="radio" name="platform" id="p-mac-x64" value="mac-x64">
+            <label for="p-mac-x64">macOS<small>Intel</small></label>
+            <input type="radio" name="platform" id="p-linux-x64" value="linux-x64">
+            <label for="p-linux-x64">Linux<small>x86_64</small></label>
+            <input type="radio" name="platform" id="p-linux-arm" value="linux-arm">
+            <label for="p-linux-arm">Linux<small>arm64</small></label>
+          </div>
+        </fieldset>
+
+        <ol class="steps">
+          <li>
+            <div>
+              <h3>Download and unpack</h3>
+              <div class="pkg" data-p="mac-arm">
+                <div class="code"><pre><code>curl -fsSL https://github.com/duylongpro99/wuts-that-bash/releases/download/v0.1.0/wib-aarch64-apple-darwin.tar.gz | tar -xz
+mkdir -p ~/.local/bin &amp;&amp; mv wib-aarch64-apple-darwin/wib ~/.local/bin/</code></pre></div>
+                <a class="btn btn-ghost" href="https://github.com/duylongpro99/wuts-that-bash/releases/download/v0.1.0/wib-aarch64-apple-darwin.tar.gz">Download .tar.gz</a>
+              </div>
+              <div class="pkg" data-p="mac-x64">
+                <div class="code"><pre><code>curl -fsSL https://github.com/duylongpro99/wuts-that-bash/releases/download/v0.1.0/wib-x86_64-apple-darwin.tar.gz | tar -xz
+mkdir -p ~/.local/bin &amp;&amp; mv wib-x86_64-apple-darwin/wib ~/.local/bin/</code></pre></div>
+                <a class="btn btn-ghost" href="https://github.com/duylongpro99/wuts-that-bash/releases/download/v0.1.0/wib-x86_64-apple-darwin.tar.gz">Download .tar.gz</a>
+              </div>
+              <div class="pkg" data-p="linux-x64">
+                <div class="code"><pre><code>curl -fsSL https://github.com/duylongpro99/wuts-that-bash/releases/download/v0.1.0/wib-x86_64-unknown-linux-musl.tar.gz | tar -xz
+mkdir -p ~/.local/bin &amp;&amp; mv wib-x86_64-unknown-linux-musl/wib ~/.local/bin/</code></pre></div>
+                <a class="btn btn-ghost" href="https://github.com/duylongpro99/wuts-that-bash/releases/download/v0.1.0/wib-x86_64-unknown-linux-musl.tar.gz">Download .tar.gz</a>
+              </div>
+              <div class="pkg" data-p="linux-arm">
+                <div class="code"><pre><code>curl -fsSL https://github.com/duylongpro99/wuts-that-bash/releases/download/v0.1.0/wib-aarch64-unknown-linux-musl.tar.gz | tar -xz
+mkdir -p ~/.local/bin &amp;&amp; mv wib-aarch64-unknown-linux-musl/wib ~/.local/bin/</code></pre></div>
+                <a class="btn btn-ghost" href="https://github.com/duylongpro99/wuts-that-bash/releases/download/v0.1.0/wib-aarch64-unknown-linux-musl.tar.gz">Download .tar.gz</a>
+              </div>
+              <p class="note">Downloaded with a browser on macOS? Clear the quarantine flag once with <code class="inline">xattr -d com.apple.quarantine ~/.local/bin/wib</code>. Each file has a <code class="inline">.sha256</code> checksum next to it in the release.</p>
+            </div>
+          </li>
+          <li>
+            <div>
+              <h3>Hook it into zsh</h3>
+              <p>Add these to the end of <code class="inline">~/.zshrc</code>, after oh-my-zsh and other plugins.</p>
+              <div class="code"><pre><code>echo 'export PATH="$HOME/.local/bin:$PATH"' &gt;&gt; ~/.zshrc
+echo 'eval "$(wib init zsh)"' &gt;&gt; ~/.zshrc</code></pre></div>
+            </div>
+          </li>
+          <li>
+            <div>
+              <h3>Open a new terminal</h3>
+              <p>Type <code class="inline">gi</code> and your git commands are already there.</p>
+            </div>
+          </li>
+        </ol>
+
+        <div class="release-links">
+          <a href="https://github.com/duylongpro99/wuts-that-bash/releases/tag/v0.1.0">All files in v0.1.0</a>
+          <a href="https://github.com/duylongpro99/wuts-that-bash#installation">Build from source with cargo</a>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <div class="wrap">
+      <div class="head">
+        <h2>Your keys keep their meaning</h2>
+        <p class="lede">Keys only change once you press <kbd>↓</kbd> to select a line. Ctrl-R, completion and history are untouched.</p>
+      </div>
+      <dl class="keys">
+        <div><dt><kbd>↓</kbd></dt><dd>Start selecting, then move down the list</dd></div>
+        <div><dt><kbd>Enter</kbd></dt><dd>Run the selected command</dd></div>
+        <div><dt><kbd>Tab</kbd></dt><dd>Fill the selected command without running it</dd></div>
+        <div><dt><kbd>Shift</kbd> <kbd>Tab</kbd></dt><dd>Fill it word by word, to reuse it as a template</dd></div>
+        <div><dt><kbd>Esc</kbd></dt><dd>Hide the list until you type again</dd></div>
+        <div><dt><kbd>wib forget</kbd></dt><dd>Never suggest a wrong or secret command again</dd></div>
+      </dl>
+    </div>
+  </section>
+</main>
+
+<footer>
+  <div class="wrap">
+    <span>wib, what is that bash? MIT licensed.</span>
+    <ul>
+      <li><a href="https://github.com/duylongpro99/wuts-that-bash">Source</a></li>
+      <li><a href="https://github.com/duylongpro99/wuts-that-bash/releases">Releases</a></li>
+      <li><a href="https://github.com/duylongpro99/wuts-that-bash#uninstall">Uninstall</a></li>
+    </ul>
+  </div>
+</footer>
+
+<script>
+(() => {
+  // Pick the platform from the browser when possible. macOS can't reliably tell
+  // Apple Silicon from Intel, so it stays on the Apple Silicon default.
+  const ua = (navigator.userAgentData && navigator.userAgentData.platform) || navigator.platform || navigator.userAgent;
+  if (/linux/i.test(ua) && !/android/i.test(navigator.userAgent)) {
+    const arm = /aarch64|arm/i.test(navigator.userAgent);
+    const el = document.getElementById(arm ? 'p-linux-arm' : 'p-linux-x64');
+    if (el) el.checked = true;
+  }
+
+  // Copy buttons on every code block.
+  const copyIcon = '<svg class="idle" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h8"/></svg>'
+    + '<svg class="done" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12.5 10 17 19 7"/></svg>';
+  document.querySelectorAll('.code').forEach((box) => {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'copy';
+    btn.setAttribute('aria-label', 'Copy commands');
+    btn.innerHTML = copyIcon;
+    btn.addEventListener('click', async () => {
+      try {
+        await navigator.clipboard.writeText(box.querySelector('code').textContent);
+        btn.dataset.state = 'done';
+        btn.setAttribute('aria-label', 'Copied');
+      } catch {
+        btn.dataset.state = 'error';
+        btn.setAttribute('aria-label', 'Copy failed, select the text instead');
+      }
+      setTimeout(() => { delete btn.dataset.state; btn.setAttribute('aria-label', 'Copy commands'); }, 1800);
+    });
+    box.appendChild(btn);
+  });
+
+  // Typing demo. Static first frame stays when motion is reduced or JS is off.
+  if (matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+  const input = document.getElementById('demo-input');
+  const list = document.getElementById('demo-list');
+  const caption = document.getElementById('demo-caption');
+  const esc = (s) => s.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+
+  // Each step: typed text, suggestions as [before, highlighted, after] parts, selected index.
+  const scenes = [
+    { caption: 'Prefix match: your most used git commands come first.', steps: [
+      ['g', [['', 'g', 'it push origin master'], ['', 'g', 'it status'], ['', 'g', 'rep -rn TODO src'], ['', 'g', 'it commit -m "fix bug"']]],
+      ['gi', [['', 'gi', 't push origin master'], ['', 'gi', 't status'], ['', 'gi', 't commit -m "fix bug"']]],
+      ['gi', [['', 'gi', 't push origin master'], ['', 'gi', 't status'], ['', 'gi', 't commit -m "fix bug"']], 0],
+    ]},
+    { caption: 'Word starts: dcup finds docker compose up.', steps: [
+      ['d', [['', 'd', 'ocker compose up -d'], ['', 'd', 'ocker ps'], ['', 'd', 'u -sh node_modules']]],
+      ['dc', [['', 'd', 'ocker ', 'c', 'ompose up -d'], ['', 'd', 'ocker ', 'c', 'ompose logs -f api']]],
+      ['dcu', [['', 'd', 'ocker ', 'c', 'ompose ', 'u', 'p -d']]],
+      ['dcup', [['', 'd', 'ocker ', 'c', 'ompose ', 'up', ' -d']]],
+      ['dcup', [['', 'd', 'ocker ', 'c', 'ompose ', 'up', ' -d']], 0],
+    ]},
+    { caption: 'Chunks: each one starts a word, so gi st means git status.', steps: [
+      ['gi ', [['', 'gi', 't push origin master'], ['', 'gi', 't status'], ['', 'gi', 't stash pop']]],
+      ['gi s', [['', 'gi', 't ', 's', 'tatus'], ['', 'gi', 't ', 's', 'tash pop']]],
+      ['gi st', [['', 'gi', 't ', 'st', 'atus'], ['', 'gi', 't ', 'st', 'ash pop']]],
+      ['gi st', [['', 'gi', 't ', 'st', 'atus'], ['', 'gi', 't ', 'st', 'ash pop']], 0],
+    ]},
+  ];
+
+  const render = (typed, items, sel) => {
+    input.textContent = typed;
+    list.innerHTML = items.map((parts, i) => {
+      const html = parts.map((p, j) => (j % 2 ? '<mark>' + esc(p) + '</mark>' : esc(p))).join('');
+      return '<li' + (i === sel ? ' class="sel"' : '') + '>' + html + '</li>';
+    }).join('');
+  };
+  const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+
+  (async function loop() {
+    for (;;) {
+      for (const scene of scenes) {
+        caption.textContent = scene.caption;
+        render('', [], -1);
+        await wait(500);
+        for (const [typed, items, sel] of scene.steps) {
+          render(typed, items, sel === undefined ? -1 : sel);
+          await wait(sel === undefined ? 380 : 1800);
+        }
+      }
+    }
+  })();
+})();
+</script>
+</body>
+</html>
