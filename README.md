@@ -310,6 +310,7 @@ rm -rf ~/.local/share/wib
 Releases: push a tag matching the `Cargo.toml` version (`git tag v0.1.0 && git push origin v0.1.0`) and
 `.github/workflows/release.yml` tests, builds the four targets and publishes the GitHub Release. The landing
 page lives in `site/` (static, no build step); its download links name the tag, so update them on each release.
+Deploying it to Cloudflare Pages is covered in [docs/deploy-cloudflare-pages.md](docs/deploy-cloudflare-pages.md).
 
 ```sh
 cargo test                                   # unit + CLI tests
