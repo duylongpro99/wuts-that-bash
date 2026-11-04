@@ -901,28 +901,36 @@ pre code { font-size: 1em; }
 
     <ol class="steps">
       <li>
-        <h3>Download and unpack</h3>
+        <h3>Download, verify and unpack</h3>
         <div class="pkg" data-p="mac-arm">
-          <div class="code"><pre><code>curl -fsSL https://github.com/duylongpro99/wuts-that-bash/releases/download/v0.1.0/wib-aarch64-apple-darwin.tar.gz | tar -xz
-mkdir -p ~/.local/bin &amp;&amp; mv wib-aarch64-apple-darwin/wib ~/.local/bin/</code></pre></div>
+          <div class="code"><pre><code>curl -fsSL -O https://github.com/duylongpro99/wuts-that-bash/releases/download/v0.1.0/wib-aarch64-apple-darwin.tar.gz -O https://github.com/duylongpro99/wuts-that-bash/releases/download/v0.1.0/wib-aarch64-apple-darwin.tar.gz.sha256
+shasum -a 256 -c wib-aarch64-apple-darwin.tar.gz.sha256 &amp;&amp;
+  tar -xzf wib-aarch64-apple-darwin.tar.gz &amp;&amp;
+  mkdir -p ~/.local/bin &amp;&amp; mv wib-aarch64-apple-darwin/wib ~/.local/bin/</code></pre></div>
           <a class="button" href="https://github.com/duylongpro99/wuts-that-bash/releases/download/v0.1.0/wib-aarch64-apple-darwin.tar.gz">Download .tar.gz</a>
         </div>
         <div class="pkg" data-p="mac-x64">
-          <div class="code"><pre><code>curl -fsSL https://github.com/duylongpro99/wuts-that-bash/releases/download/v0.1.0/wib-x86_64-apple-darwin.tar.gz | tar -xz
-mkdir -p ~/.local/bin &amp;&amp; mv wib-x86_64-apple-darwin/wib ~/.local/bin/</code></pre></div>
+          <div class="code"><pre><code>curl -fsSL -O https://github.com/duylongpro99/wuts-that-bash/releases/download/v0.1.0/wib-x86_64-apple-darwin.tar.gz -O https://github.com/duylongpro99/wuts-that-bash/releases/download/v0.1.0/wib-x86_64-apple-darwin.tar.gz.sha256
+shasum -a 256 -c wib-x86_64-apple-darwin.tar.gz.sha256 &amp;&amp;
+  tar -xzf wib-x86_64-apple-darwin.tar.gz &amp;&amp;
+  mkdir -p ~/.local/bin &amp;&amp; mv wib-x86_64-apple-darwin/wib ~/.local/bin/</code></pre></div>
           <a class="button" href="https://github.com/duylongpro99/wuts-that-bash/releases/download/v0.1.0/wib-x86_64-apple-darwin.tar.gz">Download .tar.gz</a>
         </div>
         <div class="pkg" data-p="linux-x64">
-          <div class="code"><pre><code>curl -fsSL https://github.com/duylongpro99/wuts-that-bash/releases/download/v0.1.0/wib-x86_64-unknown-linux-musl.tar.gz | tar -xz
-mkdir -p ~/.local/bin &amp;&amp; mv wib-x86_64-unknown-linux-musl/wib ~/.local/bin/</code></pre></div>
+          <div class="code"><pre><code>curl -fsSL -O https://github.com/duylongpro99/wuts-that-bash/releases/download/v0.1.0/wib-x86_64-unknown-linux-musl.tar.gz -O https://github.com/duylongpro99/wuts-that-bash/releases/download/v0.1.0/wib-x86_64-unknown-linux-musl.tar.gz.sha256
+sha256sum -c wib-x86_64-unknown-linux-musl.tar.gz.sha256 &amp;&amp;
+  tar -xzf wib-x86_64-unknown-linux-musl.tar.gz &amp;&amp;
+  mkdir -p ~/.local/bin &amp;&amp; mv wib-x86_64-unknown-linux-musl/wib ~/.local/bin/</code></pre></div>
           <a class="button" href="https://github.com/duylongpro99/wuts-that-bash/releases/download/v0.1.0/wib-x86_64-unknown-linux-musl.tar.gz">Download .tar.gz</a>
         </div>
         <div class="pkg" data-p="linux-arm">
-          <div class="code"><pre><code>curl -fsSL https://github.com/duylongpro99/wuts-that-bash/releases/download/v0.1.0/wib-aarch64-unknown-linux-musl.tar.gz | tar -xz
-mkdir -p ~/.local/bin &amp;&amp; mv wib-aarch64-unknown-linux-musl/wib ~/.local/bin/</code></pre></div>
+          <div class="code"><pre><code>curl -fsSL -O https://github.com/duylongpro99/wuts-that-bash/releases/download/v0.1.0/wib-aarch64-unknown-linux-musl.tar.gz -O https://github.com/duylongpro99/wuts-that-bash/releases/download/v0.1.0/wib-aarch64-unknown-linux-musl.tar.gz.sha256
+sha256sum -c wib-aarch64-unknown-linux-musl.tar.gz.sha256 &amp;&amp;
+  tar -xzf wib-aarch64-unknown-linux-musl.tar.gz &amp;&amp;
+  mkdir -p ~/.local/bin &amp;&amp; mv wib-aarch64-unknown-linux-musl/wib ~/.local/bin/</code></pre></div>
           <a class="button" href="https://github.com/duylongpro99/wuts-that-bash/releases/download/v0.1.0/wib-aarch64-unknown-linux-musl.tar.gz">Download .tar.gz</a>
         </div>
-        <p class="note">Downloaded with a browser on macOS? Clear the quarantine flag once with <code>xattr -d com.apple.quarantine ~/.local/bin/wib</code>. Each file has a <code>.sha256</code> checksum next to it in the release.</p>
+        <p class="note">Downloaded with a browser on macOS? Clear the quarantine flag once with <code>xattr -d com.apple.quarantine ~/.local/bin/wib</code>. The second line checks the archive against its <code>.sha256</code> checksum and stops if the download is damaged or incomplete.</p>
       </li>
       <li>
         <h3>Hook it into zsh</h3>
