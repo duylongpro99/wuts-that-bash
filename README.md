@@ -210,6 +210,8 @@ Set environment variables in `~/.zshrc`:
 - wib never modifies `~/.zsh_history`.
 - Commands starting with a space and commands matching `HISTORY_IGNORE` are not recorded. The log file is
   readable only by its owner (mode 0600).
+- wib only writes into a data directory you own that group and others can't write to, and never writes
+  through a symlinked log file. Point `WIB_DATA_DIR` at a private directory, not a shared one like `/tmp`.
 - **Limitation:** commands rejected by a custom `zshaddhistory` function are still recorded by wib, because
   zsh doesn't report which commands that function rejected. If you filter sensitive commands this way,
   switch to `HISTORY_IGNORE`.

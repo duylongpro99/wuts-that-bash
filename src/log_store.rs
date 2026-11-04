@@ -122,16 +122,14 @@ pub fn should_record(cmd: &str) -> bool {
 /// than `COMPACT_SLACK` past it; a failed compaction leaves the log as it was.
 /// The log holds command lines, so it is private to the user (0700 dir, 0600 file).
 pub fn append(dir: &Path, e: &Entry, keep_since: Option<i64>) -> io::Result<()> {
-    fs::DirBuilder::new().recursive(true).mode(0o700).create(dir)?;
+    private_dir(dir)?;
     // Without a lock (a filesystem that cannot lock, a lock file owned by
     // another user) still record the command, but skip the rewrite.
     let lock = lock(dir).ok();
-    let mut f = OpenOptions::new()
-        .create(true)
-        .append(true)
-        .read(true)
-        .mode(0o600)
-        .open(dir.join(LOG_FILE))?;
+    let mut f = open_regular(
+        OpenOptions::new().create(true).append(true).read(true).mode(0o600),
+        &dir.join(LOG_FILE),
+    )?;
     // `mode` only applies on creation; also tighten a log created by an older build.
     let meta = f.metadata()?;
     if meta.permissions().mode() & 0o077 != 0 {
@@ -167,14 +165,12 @@ pub fn load_forgotten(dir: &Path) -> HashSet<String> {
 /// Like the log, the file holds command lines and stays private (0700 dir, 0600 file).
 pub fn forget(dir: &Path, cmd: &str) -> io::Result<bool> {
     let cmd = cmd.trim();
-    fs::DirBuilder::new().recursive(true).mode(0o700).create(dir)?;
+    private_dir(dir)?;
     let _lock = lock(dir).ok();
-    let mut f = OpenOptions::new()
-        .create(true)
-        .append(true)
-        .read(true)
-        .mode(0o600)
-        .open(dir.join(FORGET_FILE))?;
+    let mut f = open_regular(
+        OpenOptions::new().create(true).append(true).read(true).mode(0o600),
+        &dir.join(FORGET_FILE),
+    )?;
     if f.metadata()?.permissions().mode() & 0o077 != 0 {
         f.set_permissions(fs::Permissions::from_mode(0o600))?;
     }
@@ -193,13 +189,49 @@ pub fn forget(dir: &Path, cmd: &str) -> io::Result<bool> {
 /// compaction replaces `history.tsv`, and a lock on the replaced file would no
 /// longer keep a waiting writer from appending to it. Released on drop.
 fn lock(dir: &Path) -> io::Result<fs::File> {
-    let f = OpenOptions::new()
-        .create(true)
-        .write(true)
-        .truncate(false)
-        .mode(0o600)
-        .open(dir.join(LOCK_FILE))?;
+    let f = open_regular(
+        OpenOptions::new().create(true).write(true).truncate(false).mode(0o600),
+        &dir.join(LOCK_FILE),
+    )?;
     f.lock()?;
+    Ok(f)
+}
+
+extern "C" {
+    fn geteuid() -> u32;
+}
+
+/// Create `dir` (0700), or check an existing one before writing into it. Anyone
+/// who can add entries to the directory could swap the log for a symlink to one
+/// of the user's files, so a directory owned by another user or writable by
+/// group/others is refused. Root may still write a user's directory (a root
+/// shell sharing $HOME).
+fn private_dir(dir: &Path) -> io::Result<()> {
+    fs::DirBuilder::new().recursive(true).mode(0o700).create(dir)?;
+    let meta = fs::metadata(dir)?;
+    // SAFETY: geteuid takes no arguments, has no preconditions and cannot fail.
+    let euid = unsafe { geteuid() };
+    if (meta.uid() != euid && euid != 0) || meta.mode() & 0o022 != 0 {
+        return Err(io::Error::new(
+            io::ErrorKind::PermissionDenied,
+            format!("{} must be owned by you and not writable by group or others", dir.display()),
+        ));
+    }
+    Ok(())
+}
+
+/// Open `path` only as a regular file, never through a symlink. The check after
+/// opening catches a symlink swapped in between the check and the open.
+fn open_regular(opts: &OpenOptions, path: &Path) -> io::Result<fs::File> {
+    let not_regular = || io::Error::new(io::ErrorKind::InvalidInput, format!("{} is not a regular file", path.display()));
+    if fs::symlink_metadata(path).is_ok_and(|m| !m.file_type().is_file()) {
+        return Err(not_regular());
+    }
+    let f = opts.open(path)?;
+    let (opened, at_path) = (f.metadata()?, fs::symlink_metadata(path)?);
+    if !at_path.file_type().is_file() || (opened.dev(), opened.ino()) != (at_path.dev(), at_path.ino()) {
+        return Err(not_regular());
+    }
     Ok(f)
 }
 
@@ -213,6 +245,9 @@ fn line_ts(line: &[u8]) -> Option<i64> {
 /// over it, so a concurrent reader sees either the old or the new log.
 fn compact_if_stale(dir: &Path, cutoff: i64) -> io::Result<()> {
     let path = dir.join(LOG_FILE);
+    if !fs::symlink_metadata(&path)?.file_type().is_file() {
+        return Ok(());
+    }
     let mut head = Vec::new();
     fs::File::open(&path)?.take(HEAD_BYTES).read_to_end(&mut head)?;
     // Commands are appended in order, so the first entry is the oldest. If the
@@ -237,15 +272,14 @@ fn compact_if_stale(dir: &Path, cutoff: i64) -> io::Result<()> {
         return Ok(());
     }
 
-    let owner = fs::metadata(&path)?;
+    let owner = fs::symlink_metadata(&path)?;
     let tmp = dir.join(format!("{LOG_FILE}.tmp"));
+    // Clear a leftover from a crash (a symlink is removed, not followed), then
+    // create the file fresh: `create_new` fails rather than follow a symlink
+    // planted in between, so the rewrite never lands in another file.
+    let _ = fs::remove_file(&tmp);
     let written = (|| {
-        let mut f = OpenOptions::new()
-            .create(true)
-            .write(true)
-            .truncate(true)
-            .mode(0o600)
-            .open(&tmp)?;
+        let mut f = OpenOptions::new().write(true).create_new(true).mode(0o600).open(&tmp)?;
         // Keep the log's owner: a root shell sharing $HOME must not leave the
         // user a log they can no longer write. Fails, and so skips, for anyone
         // but the owner or root.
@@ -325,9 +359,7 @@ mod tests {
 
     #[test]
     fn tightens_permissions_of_existing_log() {
-        let dir = std::env::temp_dir().join(format!("wib-perm-{}", std::process::id()));
-        let _ = fs::remove_dir_all(&dir);
-        fs::create_dir_all(&dir).unwrap();
+        let dir = fresh_dir("perm");
         fs::write(dir.join(LOG_FILE), "").unwrap();
         fs::set_permissions(dir.join(LOG_FILE), fs::Permissions::from_mode(0o644)).unwrap();
         append(&dir, &entry(1, "x"), None).unwrap();
@@ -338,9 +370,7 @@ mod tests {
 
     #[test]
     fn recovers_from_torn_last_line() {
-        let dir = std::env::temp_dir().join(format!("wib-torn-{}", std::process::id()));
-        let _ = fs::remove_dir_all(&dir);
-        fs::create_dir_all(&dir).unwrap();
+        let dir = fresh_dir("torn");
         fs::write(dir.join(LOG_FILE), "1\t0\t/\tcut sho").unwrap();
         append(&dir, &entry(2, "next"), None).unwrap();
         let cmds: Vec<String> = load(&dir).into_iter().map(|e| e.cmd).collect();
@@ -352,7 +382,69 @@ mod tests {
         let dir = std::env::temp_dir().join(format!("wib-{name}-{}", std::process::id()));
         let _ = fs::remove_dir_all(&dir);
         fs::create_dir_all(&dir).unwrap();
+        fs::set_permissions(&dir, fs::Permissions::from_mode(0o700)).unwrap();
         dir
+    }
+
+    /// A file outside the data directory that a planted symlink points at.
+    fn victim(dir: &Path) -> PathBuf {
+        let path = dir.with_extension("victim");
+        fs::write(&path, "precious\n").unwrap();
+        fs::set_permissions(&path, fs::Permissions::from_mode(0o644)).unwrap();
+        path
+    }
+
+    fn assert_untouched(path: &Path) {
+        assert_eq!(fs::read_to_string(path).unwrap(), "precious\n");
+        assert_eq!(fs::metadata(path).unwrap().permissions().mode() & 0o777, 0o644);
+        fs::remove_file(path).unwrap();
+    }
+
+    #[test]
+    fn refuses_a_symlinked_log() {
+        let dir = fresh_dir("symlog");
+        let target = victim(&dir);
+        std::os::unix::fs::symlink(&target, dir.join(LOG_FILE)).unwrap();
+        assert!(append(&dir, &entry(1, "x"), None).is_err());
+        assert_untouched(&target);
+        fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn refuses_a_symlinked_forget_file() {
+        let dir = fresh_dir("symforget");
+        let target = victim(&dir);
+        std::os::unix::fs::symlink(&target, dir.join(FORGET_FILE)).unwrap();
+        assert!(forget(&dir, "x").is_err());
+        assert_untouched(&target);
+        fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn compaction_never_writes_through_a_planted_temp_symlink() {
+        let dir = fresh_dir("symtmp");
+        let day = 86_400;
+        let target = victim(&dir);
+        fs::write(dir.join(LOG_FILE), format!("{}\t0\t/\told\n", day)).unwrap();
+        fs::set_permissions(dir.join(LOG_FILE), fs::Permissions::from_mode(0o600)).unwrap();
+        std::os::unix::fs::symlink(&target, dir.join(format!("{LOG_FILE}.tmp"))).unwrap();
+        append(&dir, &entry(40 * day, "new"), Some(30 * day)).unwrap();
+        assert_untouched(&target);
+        assert!(fs::symlink_metadata(dir.join(LOG_FILE)).unwrap().file_type().is_file());
+        assert_eq!(load(&dir).into_iter().map(|e| e.cmd).collect::<Vec<_>>(), ["new"]);
+        fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn refuses_a_directory_others_can_write() {
+        for mode in [0o770, 0o777, 0o1777] {
+            let dir = fresh_dir("shared");
+            fs::set_permissions(&dir, fs::Permissions::from_mode(mode)).unwrap();
+            assert!(append(&dir, &entry(1, "x"), None).is_err(), "mode {mode:o}");
+            assert!(forget(&dir, "x").is_err(), "mode {mode:o}");
+            assert!(!dir.join(LOG_FILE).exists());
+            fs::remove_dir_all(&dir).unwrap();
+        }
     }
 
     #[test]
