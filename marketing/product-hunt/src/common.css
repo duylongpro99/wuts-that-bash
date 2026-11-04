@@ -1,0 +1,47 @@
+/* Shared paper-and-pencil styles for the Product Hunt assets (matches site/index.html). */
+:root {
+  --paper: #faf9f6;
+  --ink: #21201f;
+  --ink-2: #57534f;
+  --red: #933323;
+  --green: #2f6b3a;
+  --rule: #dcd8d0;
+  --code: #f2efe8;
+  --serif: "Cutive Mono", "Iowan Old Style", Georgia, serif;
+  --italic: "Courier Prime", "Iowan Old Style", Georgia, serif;
+  --sans: "Nunito Sans", "Avenir Next", "Segoe UI", system-ui, sans-serif;
+  --mono: "SF Mono", ui-monospace, Menlo, Consolas, monospace;
+}
+* { box-sizing: border-box; border-radius: 0; margin: 0; padding: 0; }
+html, body { background: var(--paper); color: var(--ink); font-family: var(--sans); overflow: hidden; }
+.stage { position: relative; overflow: hidden; background: var(--paper); }
+.paper-bg { position: absolute; inset: 0; z-index: 0; }
+.layer { position: absolute; inset: 0; z-index: 1; }
+
+.kicker { font-weight: 700; letter-spacing: 0.08em; color: var(--ink-2); text-transform: uppercase; }
+h1, h2, h3 { font-family: var(--serif); font-weight: 400; line-height: 1.1; }
+.sub { font-family: var(--italic); font-style: italic; color: var(--ink-2); }
+.red { color: var(--red); }
+.green { color: var(--green); }
+
+/* A sketched box: content sits on clean paper, the SVG outline is drawn behind it by common.js. */
+.sk { position: relative; isolation: isolate; }
+.sk > svg.sk-frame { position: absolute; z-index: -1; pointer-events: none; overflow: visible; }
+
+/* Terminal drawn as a notebook page */
+.term { font-family: var(--mono); color: var(--ink); }
+.term .bar { font-family: var(--italic); font-style: italic; color: var(--ink-2); border-bottom: 0; }
+.term .body { white-space: pre; }
+.term .row { display: block; }
+.term .prompt { color: var(--ink-2); }
+.m { font-weight: 700; text-decoration: underline; text-decoration-thickness: 2px; text-underline-offset: 0.18em; }
+.term .sug { color: var(--ink-2); }
+.term .sug .mark { color: transparent; }
+.term .sug.sel { color: var(--ink); background: #f3e6c4; }
+.term .sug.sel .mark { color: var(--red); }
+.term .sug.fail { color: #8a8580; }
+.term .x { color: var(--red); font-family: var(--sans); font-weight: 700; }
+.term .out { color: var(--ink-2); }
+.cursor { display: inline-block; width: 0.6em; background: var(--ink); color: transparent; }
+
+.keycap { display: inline-block; font-family: var(--sans); font-weight: 700; border: 2px solid var(--ink); padding: 0.1em 0.5em; background: #fbf7ee; box-shadow: 3px 3px 0 var(--ink); }

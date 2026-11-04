@@ -1,0 +1,172 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>wib gallery</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Courier+Prime:ital,wght@1,400&family=Cutive+Mono&family=Nunito+Sans:wght@400;700&display=swap">
+<link rel="stylesheet" href="common.css">
+<style>
+  .stage { width: 1270px; height: 760px; }
+  .layer { padding: 56px 64px; }
+  .kicker { font-size: 17px; }
+  h1 { font-size: 56px; margin-top: 10px; letter-spacing: -0.01em; }
+  h2 { font-size: 50px; margin-top: 10px; }
+  .lede { font-size: 22px; line-height: 1.5; color: var(--ink-2); margin-top: 18px; }
+  .sub { font-size: 24px; margin-top: 10px; }
+  .foot { position: absolute; left: 64px; right: 64px; bottom: 34px; display: flex; justify-content: space-between;
+          font-size: 16px; color: var(--ink-2); border-top: 1px solid var(--rule); padding-top: 12px; }
+  .foot b { color: var(--ink); font-family: var(--serif); font-weight: 400; font-size: 20px; }
+  .num { font-family: var(--serif); color: var(--red); }
+
+  .term { position: absolute; }
+  .term .bar { height: 46px; line-height: 46px; padding: 0 20px; font-size: 19px; }
+  .term .body { padding: 18px 22px 22px; font-size: 22px; line-height: 1.6; }
+  .note { position: absolute; font-family: var(--italic); font-style: italic; font-size: 22px; color: var(--ink-2); line-height: 1.35; }
+  svg.ann { position: absolute; inset: 0; z-index: 2; pointer-events: none; overflow: visible; }
+
+  .card { position: absolute; font-family: var(--mono); font-size: 30px; padding: 16px 26px; white-space: nowrap; }
+  .card.in { color: var(--ink); font-weight: 700; }
+  .lbl { position: absolute; font-family: var(--italic); font-style: italic; font-size: 20px; color: var(--ink-2); }
+
+  .stat { position: absolute; width: 262px; height: 220px; padding: 24px 22px; }
+  .stat .big { font-family: var(--serif); font-size: 54px; line-height: 1; }
+  .stat .t { font-weight: 700; font-size: 19px; margin-top: 14px; }
+  .stat .d { font-size: 17px; color: var(--ink-2); margin-top: 6px; line-height: 1.45; }
+  .code { position: absolute; font-family: var(--mono); font-size: 22px; padding: 16px 24px; line-height: 1.6; white-space: pre; }
+  .code .c { color: var(--ink-2); }
+
+  table.keys { position: absolute; border-collapse: collapse; font-size: 20px; }
+  table.keys td { padding: 9px 14px 9px 0; border-bottom: 1px solid var(--rule); vertical-align: middle; }
+  table.keys td:first-child { width: 150px; }
+  .keycap { font-size: 17px; }
+  .strip { position: absolute; font-family: var(--mono); font-size: 26px; padding: 12px 22px; white-space: pre; }
+  .strip .ghost { color: #b3ada6; }
+</style>
+</head>
+<body>
+<div class="stage" id="stage"><div class="layer" id="layer"></div></div>
+<script src="common.js"></script>
+<script>
+const FOOT = `<div class="foot"><span><b>wib</b> &nbsp;·&nbsp; what is that bash?</span><span>free &amp; open source · github.com/duylongpro99/wuts-that-bash</span></div>`;
+
+function term(id, x, y, w, title, state) {
+  return `<div class="term sk" id="${id}" data-bar="46" style="left:${x}px;top:${y}px;width:${w}px">
+    <div class="bar">${title}</div><div class="body">${termHTML(state)}</div></div>`;
+}
+
+const SLIDES = {
+  // I. Hero: the list appearing under the prompt
+  1: () => `
+    <div style="width:470px">
+      <div class="kicker">wib · for zsh</div>
+      <h1>Your shell history, under your cursor.</h1>
+      <p class="lede">Type two letters and the command you ran last Tuesday is already there. No Ctrl-R, no retyping, no guessing the flags.</p>
+    </div>
+    ${term("t1", 610, 120, 600, "zsh — ~/shop", { prompt: "~/shop %", buf: "gi", list: [
+      { cmd: "git push origin master" }, { cmd: "git status" }, { cmd: 'git commit -m "fix bug"' },
+      { cmd: "git pull origin master" }, { cmd: "git checkout -b feature/cart" }] })}
+    <div class="note" style="left:640px;top:470px;width:560px;padding-left:20px">appears as you type, ranked by how often and how recently you ran it</div>
+    <svg class="ann" width="1270" height="760"><path d="M628 548 C 596 530, 590 470, 640 432" fill="none" stroke="#1d1a1e" stroke-width="2.2" stroke-linecap="round" marker-end="url(#pp-arrow)" filter="url(#pp-ink-u)"/></svg>
+    <div class="note" style="left:64px;top:440px;width:470px;font-style:normal;font-family:var(--sans);font-size:19px;color:var(--ink)">
+      <span class="green">✓</span> about 5–8 ms per lookup &nbsp; <span class="green">✓</span> no daemon<br>
+      <span class="green">✓</span> 100% local, no telemetry &nbsp; <span class="green">✓</span> MIT licensed</div>
+    ${FOOT}`,
+
+  // II. Word-initial fuzzy matching
+  2: () => {
+    const rows = [["gi st", "git status"], ["dcup", "docker compose up"], ["kgp", "kubectl get pods"]];
+    return `
+    <div style="width:1100px">
+      <div class="kicker"><span class="num">II</span> &nbsp;smart matching</div>
+      <h2>Type less. Still land on the right command.</h2>
+      <p class="sub">Prefix first, then word starts: each chunk you type begins a word.</p>
+    </div>
+    ${rows.map(([a, b], i) => `
+      <div class="card in sk" data-shadow="1" style="left:120px;top:${320 + i * 115}px;width:220px">${esc(a)}</div>
+      <div class="card sk" data-shadow="1" style="left:520px;top:${320 + i * 115}px;width:560px">${highlight(b, a)}</div>`).join("")}
+    <svg class="ann" width="1270" height="760">${rows.map((_, i) =>
+      `<path d="M362 ${353 + i * 115} L 498 ${353 + i * 115}" fill="none" stroke="#1d1a1e" stroke-width="2.4" stroke-linecap="round" marker-end="url(#pp-arrow)" filter="url(#pp-ink-u)"/>`).join("")}</svg>
+    <div class="lbl" style="left:120px;top:282px">you type</div>
+    <div class="lbl" style="left:520px;top:282px">wib suggests</div>
+    ${FOOT}`;
+  },
+
+  // III. Ranking by project, failed commands sink
+  3: () => `
+    <div style="width:1000px">
+      <div class="kicker"><span class="num">III</span> &nbsp;ranked by you</div>
+      <h2>Same letters, different project.</h2>
+      <p class="sub">Commands you ran in this repo come first. Typos that never worked sink to the bottom.</p>
+    </div>
+    ${term("t3a", 64, 290, 545, "zsh — ~/shop", { prompt: "~/shop %", buf: "gi", cursor: false, list: [
+      { cmd: "git push origin master" }, { cmd: "git checkout -b feature/cart" }, { cmd: "git status" }, { cmd: "git sttaus", fail: true }] })}
+    ${term("t3b", 661, 290, 545, "zsh — ~/api", { prompt: "~/api %", buf: "gi", cursor: false, list: [
+      { cmd: "git pull --rebase origin dev" }, { cmd: "git push origin dev" }, { cmd: "git status" }, { cmd: "git sttaus", fail: true }] })}
+    ${FOOT}`,
+
+  // IV. Keyword search
+  4: () => `
+    <div style="width:520px">
+      <div class="kicker"><span class="num">IV</span> &nbsp;keyword search</div>
+      <h2>Remember one word? That's enough.</h2>
+      <p class="sub">Type wib and a few words, in any order. A command must contain all of them.</p>
+    </div>
+    ${term("t4a", 640, 140, 570, "zsh — ~/shop", { prompt: "~/shop %", buf: "wib pull,master", kw: ["pull", "master"], list: [
+      { cmd: "git pull origin master" }, { cmd: "git pull --rebase origin master" }] })}
+    ${term("t4b", 640, 410, 570, "zsh — ~/shop", { prompt: "~/shop %", buf: "wib 8080", kw: ["8080"], list: [
+      { cmd: "docker run -p8080:80 nginx" }, { cmd: "curl localhost:8080/health" }] })}
+    ${FOOT}`,
+
+  // V. Keys and word-by-word fill
+  5: () => {
+    const steps = ["git", "git push", "git push origin", "git push origin master"];
+    const full = "git push origin master";
+    return `
+    <div style="width:1100px">
+      <div class="kicker"><span class="num">V</span> &nbsp;your keys</div>
+      <h2>Nothing changes until you press ↓.</h2>
+      <p class="sub">↑, Tab, Enter and Ctrl-R behave exactly as before. Works with oh-my-zsh, p10k and vi mode.</p>
+    </div>
+    <table class="keys" style="left:64px;top:290px">
+      <tr><td><span class="keycap">↓</span></td><td>pick a line from the list</td></tr>
+      <tr><td><span class="keycap">Enter</span></td><td>run the picked command</td></tr>
+      <tr><td><span class="keycap">Tab</span></td><td>fill it in without running</td></tr>
+      <tr><td><span class="keycap">Shift+Tab</span></td><td>fill it word by word</td></tr>
+      <tr><td><span class="keycap">Esc</span></td><td>hide the list</td></tr>
+    </table>
+    <div class="lbl" style="left:640px;top:286px">Shift+Tab, four presses</div>
+    ${steps.map((s, i) => `<div class="strip sk" style="left:640px;top:${330 + i * 86}px;width:566px">${esc(s)}<span class="ghost">${esc(full.slice(s.length))}</span></div>`).join("")}
+    ${FOOT}`;
+  },
+
+  // VI. Fast, light, private + install
+  6: () => `
+    <div style="width:1100px">
+      <div class="kicker"><span class="num">VI</span> &nbsp;fast, light, private</div>
+      <h2>One small binary. Nothing leaves your machine.</h2>
+    </div>
+    <div class="stat sk" style="left:64px;top:232px"><div class="big">5–8<span style="font-size:30px"> ms</span></div><div class="t">per lookup</div><div class="d">on ~10k commands, process startup included</div></div>
+    <div class="stat sk" style="left:358px;top:232px"><div class="big">0</div><div class="t">daemons, databases, deps</div><div class="d">one Rust binary; each lookup exits when done</div></div>
+    <div class="stat sk" style="left:652px;top:232px"><div class="big">0<span style="font-size:30px"> bytes</span></div><div class="t">sent anywhere</div><div class="d">no cloud, no account, no telemetry</div></div>
+    <div class="stat sk" style="left:946px;top:232px;width:260px"><div class="big">0600</div><div class="t">owner-only log</div><div class="d">respects HISTORY_IGNORE and leading-space commands</div></div>
+    <div class="lbl" style="left:64px;top:488px">install: download from GitHub Releases, then add one line to ~/.zshrc</div>
+    <div class="code sk" data-tint="#f2efe8" style="left:64px;top:532px;width:1142px"><span class="c"># end of ~/.zshrc — your existing ~/.zsh_history works on day one</span>
+eval "$(wib init zsh)"</div>
+    ${FOOT}`,
+};
+
+ready().then(() => {
+  const s = new URLSearchParams(location.search).get("s") || "1";
+  const layer = document.getElementById("layer");
+  layer.innerHTML = SLIDES[s]();
+  paperBackground(document.getElementById("stage"));
+  document.querySelectorAll(".sk").forEach((el) => sketch(el, {
+    bar: el.dataset.bar ? Number(el.dataset.bar) : 0,
+    shadow: !!el.dataset.shadow || el.classList.contains("term"),
+    tint: el.dataset.tint, tintOpacity: 0.9,
+  }));
+  window.__ready = true;
+});
+</script>
+</body>
+</html>

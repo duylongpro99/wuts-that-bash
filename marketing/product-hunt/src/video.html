@@ -1,0 +1,158 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>wib demo video</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Courier+Prime:ital,wght@1,400&family=Cutive+Mono&family=Nunito+Sans:wght@400;700&display=swap">
+<link rel="stylesheet" href="common.css">
+<style>
+  .stage { width: 1920px; height: 1080px; }
+  .scene { position: absolute; inset: 0; z-index: 1; opacity: 0; }
+  #title { display: flex; flex-direction: column; justify-content: center; padding: 0 180px; }
+  #title .kicker { font-size: 26px; }
+  #title h1 { font-size: 104px; margin-top: 18px; }
+  #title .sub { font-size: 40px; margin-top: 26px; }
+
+  #demo .term { position: absolute; left: 260px; top: 120px; width: 1400px; height: 640px; }
+  #demo .bar { height: 64px; line-height: 64px; padding: 0 30px; font-size: 26px; }
+  #demo .body { padding: 26px 34px; font-size: 34px; line-height: 1.6; height: 576px; overflow: hidden; }
+  #caption { position: absolute; left: 260px; right: 260px; top: 820px; font-family: var(--serif); font-size: 50px; line-height: 1.25; }
+  #caption .sub { display: block; font-size: 32px; margin-top: 10px; }
+  #key { position: absolute; right: 290px; top: 670px; font-size: 32px; opacity: 0; }
+  #step { position: absolute; left: 260px; top: 56px; font-size: 22px; }
+
+  #end { display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; }
+  #end img { width: 300px; height: 300px; }
+  #end h1 { font-size: 92px; margin-top: 18px; }
+  #end .sub { font-size: 38px; margin-top: 14px; }
+  #end .facts { font-size: 30px; margin-top: 34px; }
+  #end .url { font-family: var(--mono); font-size: 32px; margin-top: 22px; color: var(--red); }
+</style>
+</head>
+<body>
+<div class="stage" id="stage">
+  <div class="scene" id="title">
+    <div class="kicker">wib · for zsh</div>
+    <h1 id="t-line">You ran it last Tuesday.</h1>
+    <p class="sub" id="t-sub">&nbsp;</p>
+  </div>
+  <div class="scene" id="demo">
+    <div class="kicker" id="step"></div>
+    <div class="term sk" data-bar="64"><div class="bar">zsh — ~/shop</div><div class="body" id="body"></div></div>
+    <span class="keycap" id="key"></span>
+    <div id="caption"></div>
+  </div>
+  <div class="scene" id="end">
+    <img src="../logo-1024.png" alt="">
+    <h1>wib — what is that bash?</h1>
+    <p class="sub">Your shell history, surfaced the moment you start typing.</p>
+    <p class="facts"><span class="green">✓</span> about 5–8 ms &nbsp; <span class="green">✓</span> one Rust binary, no daemon &nbsp; <span class="green">✓</span> 100% local &nbsp; <span class="green">✓</span> free, MIT</p>
+    <p class="url">github.com/duylongpro99/wuts-that-bash</p>
+  </div>
+</div>
+<script src="common.js"></script>
+<script>
+// ---- Timeline -------------------------------------------------------------------------
+// Keyframes hold the complete terminal state; renderAt(t) shows the last one at or before t.
+const PROMPT = "~/shop %";
+const K = [];            // { t, s }
+const KEYS = [];         // { t, label }
+const CAPS = [];         // { t, html, step }
+let st = { lines: [], buf: "", list: [], sel: -1, kw: null };
+const at = (t, patch) => { st = { ...st, ...patch }; K.push({ t, s: st }); };
+const key = (t, label) => KEYS.push({ t, label });
+const cap = (t, step, title, sub) => CAPS.push({ t, step, html: `${title}<span class="sub">${sub}</span>` });
+
+const GI = [{ cmd: "git push origin master" }, { cmd: "git status" }, { cmd: 'git commit -m "fix bug"' }, { cmd: "git pull origin master" }];
+const DC = [{ cmd: "docker compose up" }, { cmd: "docker compose up -d --build" }];
+const KW = [{ cmd: "git pull origin master" }, { cmd: "git pull --rebase origin master" }];
+
+// In keyword mode the text after "wib " is split on commas/spaces, and the list appears once
+// that text reaches WIB_MIN_CHARS (2), as in wib itself.
+function typeText(t0, text, listFor, rate = 0.13, keywords = false) {
+  for (let i = 1; i <= text.length; i++) {
+    const b = text.slice(0, i);
+    const rest = keywords ? (b.startsWith("wib ") ? b.slice(4) : "") : b;
+    const kw = keywords ? rest.split(/[ ,]+/).filter(Boolean) : null;
+    at(t0 + (i - 1) * rate, { buf: b, kw, list: rest.length >= 2 ? listFor(b) : [], sel: -1 });
+  }
+  return t0 + text.length * rate;
+}
+function run(t, cmd, output) {
+  key(t, "Enter");
+  at(t, { lines: [...st.lines, `<span class="prompt">${PROMPT}</span> <span style="color:var(--ink)">${esc(cmd)}</span>`, ...output], buf: "", list: [], sel: -1, kw: null });
+}
+
+at(0, {}); // empty terminal until the first keystroke
+const T_DEMO = 5.0;
+// Scene 1: two letters, pick, run
+cap(T_DEMO, "I · as you type", "Type two letters.", "Your recent commands appear under the cursor.");
+let t = typeText(T_DEMO + 0.8, "gi", () => GI);
+key(t + 1.6, "↓"); at(t + 1.6, { sel: 0 });
+run(t + 3.0, "git push origin master", ["To github.com:you/shop.git", "   4f1c2ab..9e07d1c  master -&gt; master"]);
+
+// Scene 2: word-initial fuzzy
+const T2 = t + 4.4;
+cap(T2, "II · smart matching", "dcup → docker compose up", "Each chunk you type is the start of a word.");
+t = typeText(T2 + 0.6, "dcup", () => DC);
+key(t + 1.4, "↓"); at(t + 1.4, { sel: 0 });
+run(t + 2.6, "docker compose up", ["[+] Running 2/2  ✔ db  Started  ✔ web  Started"]);
+
+// Scene 3: keyword search
+const T3 = t + 4.0;
+cap(T3, "III · keyword search", "Remember one word? That's enough.", "wib pull,master finds commands with both words.");
+t = typeText(T3 + 0.6, "wib pull,master", (b) => b.includes("master") ? KW : [...KW, { cmd: "docker pull nginx" }], 0.1, true);
+key(t + 1.4, "↓"); at(t + 1.4, { sel: 0 });
+run(t + 2.5, "git pull origin master", ["Already up to date."]);
+t += 1.2;
+
+// Scene 4: word-by-word fill
+const T4 = t + 2.8;
+cap(T4, "IV · word by word", "Shift+Tab fills it one word at a time.", "Reuse an old command as a template, edit only the end.");
+t = typeText(T4 + 0.5, "gi", () => GI);
+key(t + 0.9, "↓"); at(t + 0.9, { sel: 0 });
+const fills = ["git", "git push", "git push origin", "git push origin master"];
+fills.forEach((f, i) => { key(t + 1.9 + i * 0.75, "Shift+Tab"); at(t + 1.9 + i * 0.75, { buf: f, list: [], sel: -1 }); });
+const T_END = t + 1.9 + fills.length * 0.75 + 1.8;
+window.DURATION = T_END + 5.0;
+
+// ---- Rendering --------------------------------------------------------------------------
+const $ = (id) => document.getElementById(id);
+const clamp = (x) => Math.max(0, Math.min(1, x));
+const fade = (t, a, b, d = 0.5) => clamp((t - a) / d) * clamp((b - t) / d);
+const last = (arr, t) => { let r = null; for (const e of arr) if (e.t <= t) r = e; return r; };
+
+function renderAt(t) {
+  $("title").style.opacity = fade(t, -1, T_DEMO - 0.2);
+  $("t-sub").innerHTML = t >= 1.8 ? "You just can't remember the flags. What <em>was</em> that bash?" : "&nbsp;";
+  $("t-sub").style.opacity = clamp((t - 1.8) / 0.4);
+  $("demo").style.opacity = fade(t, T_DEMO - 0.3, T_END);
+  $("end").style.opacity = fade(t, T_END, DURATION + 1);
+
+  const k = last(K, t);
+  const s = k ? k.s : st;
+  const lines = s.lines.slice(-6);
+  const blink = Math.floor(t * 2) % 2 === 0;
+  $("body").innerHTML = termHTML({ ...s, lines, prompt: PROMPT, cursor: s.sel < 0 ? blink : false });
+  const kk = last(KEYS, t);
+  const kOn = kk && t - kk.t < 0.7;
+  $("key").textContent = kOn ? kk.label : "";
+  $("key").style.opacity = kOn ? 1 : 0;
+  const c = last(CAPS, t);
+  $("caption").innerHTML = c ? c.html : "";
+  $("caption").style.opacity = c ? clamp((t - c.t) / 0.4) : 0;
+  $("step").textContent = c ? c.step : "";
+}
+window.renderAt = renderAt;
+
+ready().then(async () => {
+  paperBackground($("stage"));
+  $("demo").style.opacity = 1;
+  sketch(document.querySelector("#demo .term"), { bar: 64, shadow: true, stroke: 2.8 });
+  await new Promise((r) => { const img = document.querySelector("#end img"); img.complete ? r() : img.onload = r; });
+  renderAt(0);
+  window.__ready = true;
+});
+</script>
+</body>
+</html>
