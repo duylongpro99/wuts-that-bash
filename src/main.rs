@@ -209,7 +209,7 @@ fn cmd_query(args: &[String]) -> Result<(), String> {
         let written = if a.has("-0") {
             out.write_all(cmd.as_bytes()).and_then(|_| out.write_all(b"\0"))
         } else {
-            writeln!(out, "{}", cmd.replace('\\', "\\\\").replace('\n', "\\n"))
+            writeln!(out, "{}", printable(cmd))
         };
         if written.is_err() {
             return Ok(()); // reader went away (e.g. piped into head)
@@ -217,6 +217,23 @@ fn cmd_query(args: &[String]) -> Result<(), String> {
     }
     let _ = out.flush();
     Ok(())
+}
+
+/// A command as one terminal line: newlines become `\n`, and control
+/// characters other than tab become `\xHH`, so a history entry holding an
+/// escape sequence is shown, not interpreted by the terminal.
+fn printable(cmd: &str) -> String {
+    let mut out = String::with_capacity(cmd.len());
+    for c in cmd.chars() {
+        match c {
+            '\\' => out.push_str("\\\\"),
+            '\n' => out.push_str("\\n"),
+            '\t' => out.push('\t'),
+            c if c.is_control() => out.push_str(&format!("\\x{:02x}", c as u32)),
+            c => out.push(c),
+        }
+    }
+    out
 }
 
 fn cmd_record(args: &[String]) -> Result<(), String> {
@@ -258,7 +275,7 @@ fn cmd_forget(args: &[String]) -> Result<(), String> {
         return Err(format!("no command to forget\n\n{USAGE}"));
     }
     let added = log_store::forget(&log_store::data_dir(), cmd).map_err(|e| format!("cannot write forget file: {e}"))?;
-    let shown = cmd.replace('\\', "\\\\").replace('\n', "\\n");
+    let shown = printable(cmd);
     if added {
         println!("forgot: {shown}");
     } else {
