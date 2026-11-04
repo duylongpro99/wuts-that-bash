@@ -121,6 +121,17 @@ fn null_output_keeps_multiline_commands_intact() {
 }
 
 #[test]
+fn text_output_shows_control_characters_instead_of_sending_them() {
+    let sb = Sandbox::new("ctrl", &[]);
+    let ts = now().to_string();
+    sb.wib(&["record", "--ts", &ts, "--exit", "0", "--cwd", "/", "--", "echo \x1b]0;pwned\x07\tdone\u{9b}"]);
+    let (out, _) = sb.wib(&["query", "--", "echo"]);
+    assert_eq!(out, "echo \\x1b]0;pwned\\x07\tdone\\x9b\n");
+    let (out, _) = sb.wib(&["query", "-0", "--", "echo"]);
+    assert_eq!(out, "echo \x1b]0;pwned\x07\tdone\u{9b}\0");
+}
+
+#[test]
 fn invalid_arguments_exit_with_2() {
     let sb = Sandbox::new("args", &[]);
     assert_eq!(sb.wib(&["query", "--period", "7x", "--", "ls"]).1, 2);
