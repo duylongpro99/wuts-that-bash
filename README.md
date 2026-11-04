@@ -1,5 +1,7 @@
 <div align="center">
 
+<img src="marketing/product-hunt/logo-240.png" alt="wib logo: a notebook-page terminal with a red prompt chevron" width="120">
+
 # wib — what is that bash?
 
 **Your shell history, surfaced the moment you start typing.**
@@ -15,12 +17,10 @@ Type two letters and the command you ran last Tuesday is already under your curs
 
 </div>
 
-```text
-PROMPT> gi
-› git push origin master
-  git status
-  git commit -m "fix bug"
-```
+<p align="center">
+  <a href="marketing/product-hunt/wib-demo.mp4"><img src="marketing/product-hunt/wib-demo.gif" alt="Demo: typing gi lists recent git commands under the prompt; dcup suggests docker compose up; wib pull,master finds commands with both words; Shift+Tab fills git push origin master word by word" width="820"></a>
+  <br><sub>Click for the full-quality video.</sub>
+</p>
 
 ---
 
@@ -42,12 +42,23 @@ Type `dcup` and you get `docker compose up`. Press ↓ and Enter and it runs.
 - 🤝 **Plays nice**: works with oh-my-zsh, powerlevel10k, zsh-autosuggestions and vi mode.
 - 🔁 **Works on day one**: your existing `~/.zsh_history` powers suggestions immediately.
 
+### Who it's for
+
+- Developers, DevOps and SRE engineers, and data people who live in a zsh terminal on macOS or Linux.
+- Anyone who reruns the same long `git`, `docker`, `kubectl`, `ssh` or `npm` commands with small changes.
+- People who switch between several repos and want each project's commands to come first.
+- Privacy-minded users who won't send their shell history to a cloud service.
+
+Not for (yet): bash and fish users. wib needs zsh 5.3 or newer.
+
 Download a prebuilt binary from [Releases](https://github.com/duylongpro99/wuts-that-bash/releases), or see
 [Installation](#installation). Open a new terminal. That's it.
 
 ---
 
 ## How it matches
+
+![Type less, still land on the right command: gi st becomes git status, dcup becomes docker compose up, kgp becomes kubectl get pods](marketing/product-hunt/gallery-2@2x.png)
 
 - Prefix matches come first, then fuzzy matching on word starts (`dcup` → `docker compose up`,
   `gi st` → `git status`). Each chunk you type must be the start of a word in the command; letters
@@ -63,6 +74,8 @@ Download a prebuilt binary from [Releases](https://github.com/duylongpro99/wuts-
   as failed.
 - Suggestions come from the last 30 days by default (see `WIB_PERIOD`).
 - Your data never leaves your machine.
+
+![Same letters, different project: typing gi in ~/shop and in ~/api lists each project's own git commands first, and the typo git sttaus sinks to the bottom marked never worked](marketing/product-hunt/gallery-3@2x.png)
 
 ## Why wib
 
@@ -85,6 +98,8 @@ Download a prebuilt binary from [Releases](https://github.com/duylongpro99/wuts-
 | zsh-autosuggestions | Appears as you type | One grey hint | No |
 | Ctrl-R / fzf | Press a key to open | Search list | No |
 | atuin | Press a key to open | Search list | Yes |
+
+![One small binary, nothing leaves your machine: 5 to 8 ms per lookup, 0 daemons, 0 bytes sent anywhere, owner-only 0600 log](marketing/product-hunt/gallery-6@2x.png)
 
 ## Installation
 
@@ -120,6 +135,8 @@ Open a new terminal and you're done. Your existing `~/.zsh_history` takes effect
 
 ## Key bindings
 
+![Nothing changes until you press down: arrow keys, Enter, Tab, Shift+Tab and Esc, plus Shift+Tab filling git push origin master one word per press](marketing/product-hunt/gallery-5@2x.png)
+
 The list has two modes: **typing** (list visible, no line selected) and **selecting** (one line highlighted).
 
 | Key | While typing | While selecting |
@@ -150,6 +167,8 @@ Option/Meta) stops working. Ctrl-G always hides the list immediately.
 **vi mode** (`bindkey -v`): Esc hides the list and switches to command mode as usual.
 
 ## Keyword search
+
+![Remember one word? wib pull,master lists git pull origin master; wib 8080 lists docker run -p8080:80 nginx](marketing/product-hunt/gallery-4@2x.png)
 
 When you only remember a few words from an old command, type `wib` followed by those words. Keywords are
 separated by commas or spaces, in any order, and a command must contain all of them.
