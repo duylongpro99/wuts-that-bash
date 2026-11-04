@@ -92,11 +92,14 @@ Requires zsh ≥ 5.3.
 
 **Prebuilt binary (macOS, Linux).** Each [release](https://github.com/duylongpro99/wuts-that-bash/releases) has
 `wib-<target>.tar.gz` plus a `.sha256` checksum for `aarch64-apple-darwin` (Apple Silicon), `x86_64-apple-darwin`
-(Intel Mac), `x86_64-unknown-linux-musl` and `aarch64-unknown-linux-musl`. For example, on Apple Silicon:
+(Intel Mac), `x86_64-unknown-linux-musl` and `aarch64-unknown-linux-musl`. For example, on Apple Silicon
+(on Linux, use `sha256sum -c` in place of `shasum -a 256 -c`):
 
 ```sh
-curl -fsSL https://github.com/duylongpro99/wuts-that-bash/releases/download/v0.1.0/wib-aarch64-apple-darwin.tar.gz | tar -xz
-mkdir -p ~/.local/bin && mv wib-aarch64-apple-darwin/wib ~/.local/bin/
+curl -fsSL -O https://github.com/duylongpro99/wuts-that-bash/releases/download/v0.1.0/wib-aarch64-apple-darwin.tar.gz -O https://github.com/duylongpro99/wuts-that-bash/releases/download/v0.1.0/wib-aarch64-apple-darwin.tar.gz.sha256
+shasum -a 256 -c wib-aarch64-apple-darwin.tar.gz.sha256 &&
+  tar -xzf wib-aarch64-apple-darwin.tar.gz &&
+  mkdir -p ~/.local/bin && mv wib-aarch64-apple-darwin/wib ~/.local/bin/
 ```
 
 If you downloaded the archive with a browser on macOS, clear the quarantine flag once:
