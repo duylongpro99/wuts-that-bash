@@ -83,6 +83,85 @@ kbd { font: 0.82em/1 var(--mono); padding: 0.2em 0.4em; border: 1px solid var(--
 .sugg mark { background: none; color: inherit; font-weight: 700; text-decoration: underline; text-decoration-thickness: 2px; text-underline-offset: 0.2em; }
 .demo figcaption { margin-top: 8px; font-family: var(--italic); font-style: italic; color: var(--ink-2); }
 
+/* Hero row: the demo, and a person at a desk who reacts to it */
+.hero-row { margin-top: 40px; display: grid; grid-template-columns: minmax(0, var(--measure)) minmax(0, 320px); gap: 24px 40px; align-items: start; }
+.hero-row .demo { margin: 0; }
+.buddy { margin: 0; }
+.buddy svg { width: 100%; box-shadow: 0 0 0 1px var(--rule); background: var(--paper); }
+@media (max-width: 860px) { .hero-row { grid-template-columns: minmax(0, 1fr); } .buddy { max-width: 220px; } }
+#buddy .m-idle, #buddy .m-think, #buddy .m-found { display: none; }
+#buddy[data-mood="idle"] .m-idle, #buddy[data-mood="think"] .m-think, #buddy[data-mood="found"] .m-found { display: inline; }
+
+/* People hop once when their plate comes into view, and again on hover */
+.pp-who, .buddy-who { transform-box: fill-box; transform-origin: 50% 100%; }
+@media (prefers-reduced-motion: no-preference) {
+  .plate.seen .pp-who, .plate:hover .pp-who { animation: hop 0.7s ease-out; }
+  #buddy[data-mood="found"] .buddy-who { animation: hop 0.6s ease-out; }
+}
+@media (prefers-reduced-motion: no-preference) {
+  svg.hop .who, .wave.hop .who, .wave:hover .who { animation: hop 0.7s ease-out; }
+}
+.who { transform-box: fill-box; transform-origin: 50% 100%; }
+.sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+
+/* The hero person is a button: tap it and it says something */
+.buddy-btn { display: block; width: 100%; padding: 0; border: 0; background: none; cursor: pointer; }
+.buddy figcaption, .side-art figcaption { margin-top: 8px; font-family: var(--italic); font-style: italic; color: var(--ink-2); }
+#buddy .say { display: none; }
+#buddy[data-talk] .say { display: inline; }
+#buddy[data-talk] .bub { display: none; }
+.t-say { font: italic 400 21px var(--italic); fill: #1d1a1e; }
+
+/* Side drawings next to the install steps and the key list */
+.side-row { margin-top: 0; display: grid; grid-template-columns: minmax(0, var(--measure)) minmax(0, 300px); gap: 24px 40px; align-items: start; }
+.side-art { margin: 24px 0 0; position: sticky; top: 24px; }
+.side-art svg, .goodbye { width: 100%; box-shadow: 0 0 0 1px var(--rule); background: var(--paper); }
+@media (max-width: 860px) {
+  .side-row { grid-template-columns: minmax(0, 1fr); }
+  .side-art { position: static; max-width: 220px; }
+  .helper { order: -1; }
+}
+.t-sign { font: 400 34px var(--serif); }
+.t-sign-sub { font: italic 400 22px var(--italic); }
+.t-cap { font: 400 40px var(--serif); }
+#helper .f-smile, #helper .f-happy, #helper .f-oops, #presser .f-smile, #presser .f-happy { display: none; }
+#helper[data-mood="idle"] .f-smile, #helper[data-mood="done"] .f-happy, #helper[data-mood="error"] .f-oops,
+#presser[data-mood="idle"] .f-smile, #presser[data-mood="hit"] .f-happy { display: inline; }
+.sign, .cap { transform-box: fill-box; transform-origin: 50% 50%; transition: transform 0.2s ease-out; }
+#helper[data-mood="error"] .sign { transform: rotate(-6deg); }
+#presser[data-mood="hit"] .cap { transform: translateY(6px); }
+.keys > div { cursor: pointer; transition: background-color 0.2s; }
+.keys > div.hit { background: var(--code); }
+
+/* Footer: people waving goodbye */
+.goodbye { margin-bottom: 20px; }
+.wave { cursor: pointer; }
+
+/* Live terminal: click it, or the try button, and type */
+.term-bar { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
+.try-btn { padding: 1px 9px; font: 700 0.8rem/1.4 var(--sans); letter-spacing: 0; color: var(--ink); background: var(--paper); border: 1px solid var(--ink); cursor: pointer; }
+.try-btn:hover { background: var(--code); }
+.term { cursor: text; }
+.term:focus-within { outline: 2px solid var(--red); outline-offset: 3px; }
+.try { width: calc(100% - 2.5ch); padding: 0; border: 0; outline: 0; background: transparent; font: inherit; color: var(--ink); caret-color: var(--ink); }
+.term .fail, .sugg li.failed { color: var(--red); }
+.sugg li.sel.failed { color: var(--paper); }
+.sugg li { cursor: pointer; }
+.term [hidden] { display: none; }
+
+/* The hero person's oops: shown only when a command fails */
+#buddy .m-oops { display: none; }
+#buddy[data-mood="oops"] .m-oops { display: inline; }
+
+@media (prefers-reduced-motion: no-preference) {
+  #buddy[data-mood="oops"] .buddy-who { animation: shake 0.45s ease-in-out; }
+  .eye { transform-box: fill-box; transform-origin: center; animation: eye-blink var(--blink, 5s) var(--blink-at, 0s) infinite; }
+}
+@keyframes shake { 20%, 60% { transform: translateX(-6px); } 40%, 80% { transform: translateX(6px); } }
+@keyframes eye-blink { 0%, 93%, 100% { transform: scaleY(1); } 96% { transform: scaleY(0.1); } }
+
+@keyframes hop { 0%, 100% { transform: translateY(0); } 35% { transform: translateY(-14px); } 60% { transform: translateY(0) scaleY(0.97); } }
+
 /* Plates: captioned drawings in a 2-up / 1-up grid */
 .plates { margin-top: 64px; display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 480px), 1fr)); gap: 56px 40px; }
 .plate { margin: 0; }
@@ -260,13 +339,15 @@ pre code { font-size: 1em; }
     </ul>
   </header>
 
+  <div class="hero-row">
   <figure class="demo">
-    <div class="term" role="img" aria-label="Demo: typing gi in zsh lists git push origin master, git status and git commit -m &quot;fix bug&quot; below the prompt">
-      <div class="term-bar" aria-hidden="true">zsh</div>
-      <div class="term-body" aria-hidden="true">
+    <div class="term" id="term">
+      <div class="term-bar"><span aria-hidden="true">zsh</span><button type="button" class="try-btn" id="try-btn">try it yourself</button></div>
+      <div class="term-body">
         <div class="line dim">~/code/api on main</div>
-        <div class="line"><span class="prompt">❯ </span><span id="demo-input">gi</span><span class="cursor"></span></div>
-        <ul class="sugg" id="demo-list">
+        <div id="term-out"></div>
+        <div class="line"><span class="prompt" aria-hidden="true">❯ </span><span id="demo-input" aria-hidden="true">gi</span><span class="cursor" aria-hidden="true"></span><input class="try" id="try" type="text" hidden autocomplete="off" autocapitalize="off" spellcheck="false" role="combobox" aria-autocomplete="list" aria-controls="demo-list" aria-expanded="false" aria-label="Try wib: type the start of a command"></div>
+        <ul class="sugg" id="demo-list" role="listbox" aria-label="Suggestions">
           <li><mark>gi</mark>t push origin master</li>
           <li><mark>gi</mark>t status</li>
           <li><mark>gi</mark>t commit -m "fix bug"</li>
@@ -275,6 +356,66 @@ pre code { font-size: 1em; }
     </div>
     <figcaption id="demo-caption" aria-live="off">Prefix match: your most used git commands come first.</figcaption>
   </figure>
+  <figure class="buddy">
+    <button type="button" class="buddy-btn" id="buddy-btn" aria-label="Ask the person at the desk what they are thinking">
+<svg viewBox="0 0 420 420" aria-hidden="true" focusable="false" data-mood="think" id="buddy">
+  <rect width="420" height="420" fill="#f6f1e6" filter="url(#pp-paper)"/>
+  <g class="buddy-who who">
+  <g transform="translate(210 340) scale(1.2)" fill="none" stroke="#1d1a1e" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">
+    <g filter="url(#pp-ink)">
+      <g class="m-idle"><path d="M-24 -112 L-30 -78"/><path d="M24 -112 L30 -78"/></g>
+      <g class="m-think"><path d="M-24 -112 L-30 -78"/><path d="M24 -112 C44 -100 40 -126 20 -128"/></g>
+      <g class="m-found"><path d="M-24 -112 L-52 -168"/><path d="M24 -112 L52 -168"/></g>
+      <g class="m-oops"><path d="M-24 -112 C-46 -104 -48 -128 -36 -140"/><path d="M24 -112 C46 -104 48 -128 36 -140"/></g>
+    </g>
+    <path d="M-24 -120 H24 L34 -56 H-34 Z" fill="#fbf7ee" stroke="none"/><path d="M-24 -120 H24 L34 -56 H-34 Z" fill="#c4dbe8" stroke="none" filter="url(#pp-pencil)"/><path d="M-24 -120 H24 L34 -56 H-34 Z" fill="none" filter="url(#pp-ink)"/><path d="M-24 -120 H24 L34 -56 H-34 Z" fill="none" filter="url(#pp-ink-b)" opacity="0.45"/>
+    <path d="M-40 -158 a40 40 0 1 0 80 0 a40 40 0 1 0 -80 0 Z" fill="#fbf7ee" stroke="none"/><path d="M-40 -158 a40 40 0 1 0 80 0 a40 40 0 1 0 -80 0 Z" fill="#f7e1cc" stroke="none" filter="url(#pp-pencil)"/><path d="M-40 -158 a40 40 0 1 0 80 0 a40 40 0 1 0 -80 0 Z" fill="none" filter="url(#pp-ink)"/><path d="M-40 -158 a40 40 0 1 0 80 0 a40 40 0 1 0 -80 0 Z" fill="none" filter="url(#pp-ink-b)" opacity="0.45"/>
+    <path d="M-44 -130 C-54 -214 54 -214 44 -130 L36 -132 C38 -160 30 -176 0 -178 C-30 -176 -38 -160 -36 -132 Z" fill="#6b5a4e" stroke="none" filter="url(#pp-pencil)"/>
+    <path d="M-44 -130 C-54 -214 54 -214 44 -130 L36 -132 C38 -160 30 -176 0 -178 C-30 -176 -38 -160 -36 -132 Z" filter="url(#pp-ink)"/>
+    <ellipse cx="-25" cy="-138" rx="7" ry="4" fill="#f2b9c2" opacity="0.7" stroke="none"/>
+    <ellipse cx="25" cy="-138" rx="7" ry="4" fill="#f2b9c2" opacity="0.7" stroke="none"/>
+    <g id="buddy-face">
+    <g class="m-idle"><g fill="#1d1a1e" stroke="#1d1a1e"><circle cx="-14" cy="-148" r="4.2" class="eye"/><circle cx="14" cy="-148" r="4.2" class="eye"/><path d="M-5 -133 H5" fill="none" stroke-width="2.4"/></g></g>
+    <g class="m-think"><g fill="#1d1a1e" stroke="#1d1a1e"><circle cx="-12" cy="-157" r="4.2" class="eye"/><circle cx="16" cy="-157" r="4.2" class="eye"/><path d="M6 -170 L22 -173" fill="none" stroke-width="2.2"/><circle cx="2" cy="-134" r="4" fill="none" stroke-width="2.2"/></g></g>
+    <g class="m-found"><g fill="#1d1a1e" stroke="#1d1a1e"><path d="M-20 -150 Q-14 -159 -8 -150 M8 -150 Q14 -159 20 -150" fill="none" stroke-width="2.6"/><path d="M-10 -138 Q0 -124 10 -138 Z" fill="#d9727a" stroke-width="2.2"/></g></g>
+    <g class="m-oops"><g fill="#1d1a1e" stroke="#1d1a1e"><circle cx="-14" cy="-150" r="4.2" class="eye"/><circle cx="14" cy="-150" r="4.2" class="eye"/><path d="M-22 -166 L-8 -162 M22 -166 L8 -162" fill="none" stroke-width="2.2"/><path d="M-9 -132 q4.5 -5 9 0 q4.5 5 9 0" fill="none" stroke-width="2.4"/></g></g>
+    </g>
+  </g>
+  </g>
+  <!-- thought bubble while typing -->
+  <g class="m-think bub" fill="none" stroke="#1d1a1e" stroke-width="2" filter="url(#pp-ink)">
+    <circle cx="296" cy="146" r="6"/><circle cx="314" cy="118" r="9"/>
+    <path d="M306 92 C290 60 320 34 344 50 C362 26 400 44 392 72 C410 92 386 116 366 106 C350 124 314 116 306 92 Z" fill="#fbf7ee"/>
+  </g>
+  <text class="m-think bub" x="350" y="90" text-anchor="middle" font-family="Cutive Mono, Georgia, serif" font-size="36" fill="#1d1a1e">?</text>
+  <!-- oops: a red cross, only for a command that failed -->
+  <text class="m-oops" x="330" y="110" font-family="Cutive Mono, Georgia, serif" font-size="64" fill="#933323">✗</text>
+  <!-- found: a green tick, the only pass colour -->
+  <g class="m-found">
+    <text x="330" y="110" font-family="Cutive Mono, Georgia, serif" font-size="64" fill="#2f6b3a">✓</text>
+    <g fill="none" stroke="#1d1a1e" stroke-width="2" stroke-linecap="round" filter="url(#pp-ink)">
+      <path d="M96 120 L80 108 M92 146 L72 146 M330 150 L348 156"/>
+    </g>
+  </g>
+  <!-- speech bubble when someone taps the person -->
+  <g class="say">
+    <path d="M20 14 H400 V72 H262 L238 92 L242 72 H20 Z" fill="#fbf7ee" stroke="none"/>
+    <path d="M20 14 H400 V72 H262 L238 92 L242 72 H20 Z" fill="none" stroke="#1d1a1e" stroke-width="2" stroke-linejoin="round" filter="url(#pp-ink)"/>
+    <text class="t-say" id="buddy-say" x="210" y="51" text-anchor="middle"></text>
+  </g>
+  <!-- laptop lid, seen from behind, and the desk -->
+  <g fill="none" stroke="#1d1a1e" stroke-width="2.4" stroke-linejoin="round">
+    <path d="M120 236 H300 V312 H120 Z" fill="#fbf7ee" stroke="none"/><path d="M120 236 H300 V312 H120 Z" fill="#dcebf1" stroke="none" filter="url(#pp-pencil)"/><path d="M120 236 H300 V312 H120 Z" fill="none" filter="url(#pp-ink)"/><path d="M120 236 H300 V312 H120 Z" fill="none" filter="url(#pp-ink-b)" opacity="0.45"/>
+    <path d="M200 266 l10 8 -10 8" stroke-width="2.4" stroke-linecap="round" filter="url(#pp-ink)"/>
+    <path d="M30 312 H390 V330 H30 Z" fill="#fbf7ee" stroke="none"/><path d="M30 312 H390 V330 H30 Z" fill="#c99b6b" stroke="none" filter="url(#pp-pencil)"/><path d="M30 312 H390 V330 H30 Z" fill="none" filter="url(#pp-ink)"/><path d="M30 312 H390 V330 H30 Z" fill="none" filter="url(#pp-ink-b)" opacity="0.45"/>
+    <path d="M60 330 V392 M360 330 V392" stroke-width="2.4" stroke-linecap="round" filter="url(#pp-ink)"/>
+  </g>
+  <path d="M16 392 H404" fill="none" stroke="#1d1a1e" stroke-width="2" stroke-linecap="round" filter="url(#pp-ink)"/>
+</svg>
+    </button>
+    <figcaption>Tap the person at the desk.<span class="sr" id="buddy-said" aria-live="polite"></span></figcaption>
+  </figure>
+  </div>
 
   <section class="plates" aria-label="How wib works, in four drawings">
 
@@ -362,6 +503,23 @@ pre code { font-size: 1em; }
           <text class="t-step" x="750" y="902">up to 8 lines</text>
           <text class="t-step" x="750" y="942">under your prompt</text>
         </g>
+              <!-- spot art: a person -->
+        <g transform="translate(450 985) scale(0.9)">
+  <g class="pp-who" fill="none" stroke="#1d1a1e" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round">
+    <ellipse cx="0" cy="3" rx="46" ry="7" fill="url(#pp-hatch)" stroke="none" opacity="0.8"/>
+    <g filter="url(#pp-ink)"><path d="M-12 -58 L-17 -10 M12 -58 L17 -10"/><path d="M-24 -112 C-60 -100 -90 -96 -120 -96"/><path d="M24 -112 L40 -70"/></g>
+    <ellipse cx="-21" cy="-6" rx="14" ry="7" fill="#ffffff" filter="url(#pp-ink)"/>
+    <ellipse cx="21" cy="-6" rx="14" ry="7" fill="#ffffff" filter="url(#pp-ink)"/>
+    <path d="M-24 -120 H24 L34 -56 H-34 Z" fill="#fbf7ee" stroke="none"/><path d="M-24 -120 H24 L34 -56 H-34 Z" fill="#c4dbe8" stroke="none" filter="url(#pp-pencil)"/><path d="M-24 -120 H24 L34 -56 H-34 Z" fill="none" filter="url(#pp-ink)"/><path d="M-24 -120 H24 L34 -56 H-34 Z" fill="none" filter="url(#pp-ink-b)" opacity="0.45"/>
+    <path d="M-40 -158 a40 40 0 1 0 80 0 a40 40 0 1 0 -80 0 Z" fill="#fbf7ee" stroke="none"/><path d="M-40 -158 a40 40 0 1 0 80 0 a40 40 0 1 0 -80 0 Z" fill="#f7e1cc" stroke="none" filter="url(#pp-pencil)"/><path d="M-40 -158 a40 40 0 1 0 80 0 a40 40 0 1 0 -80 0 Z" fill="none" filter="url(#pp-ink)"/><path d="M-40 -158 a40 40 0 1 0 80 0 a40 40 0 1 0 -80 0 Z" fill="none" filter="url(#pp-ink-b)" opacity="0.45"/>
+    <path d="M-42 -156 C-46 -214 46 -214 42 -156 C34 -176 8 -184 -6 -172 C-18 -184 -34 -176 -42 -156 Z" fill="#6b5a4e" stroke="none" filter="url(#pp-pencil)"/>
+    <path d="M-42 -156 C-46 -214 46 -214 42 -156 C34 -176 8 -184 -6 -172 C-18 -184 -34 -176 -42 -156 Z" filter="url(#pp-ink)"/>
+    <ellipse cx="-25" cy="-138" rx="7" ry="4" fill="#f2b9c2" opacity="0.7" stroke="none"/>
+    <ellipse cx="25" cy="-138" rx="7" ry="4" fill="#f2b9c2" opacity="0.7" stroke="none"/>
+    <g fill="#1d1a1e" stroke="#1d1a1e"><circle cx="-14" cy="-148" r="4.2" class="eye"/><circle cx="14" cy="-148" r="4.2" class="eye"/><path d="M-5 -133 H5" fill="none" stroke-width="2.4"/></g>
+    
+  </g>
+</g>
       </svg>
       <figcaption>
         <span class="num">I</span><h2>A lookup</h2>
@@ -437,6 +595,23 @@ pre code { font-size: 1em; }
           </g>
           <path d="M286 11 L300 15 L286 19 Z" fill="#1d1a1e" stroke="none"/>
         </g>
+              <!-- spot art: a person -->
+        <path d="M790 386 H1010" fill="none" stroke="#1d1a1e" stroke-width="2" stroke-linecap="round" filter="url(#pp-ink)"/><g transform="translate(900 383) scale(0.8)">
+  <g class="pp-who" fill="none" stroke="#1d1a1e" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round">
+    <ellipse cx="0" cy="3" rx="46" ry="7" fill="url(#pp-hatch)" stroke="none" opacity="0.8"/>
+    <g filter="url(#pp-ink)"><path d="M-12 -58 L-17 -10 M12 -58 L17 -10"/><path d="M-24 -112 C-60 -90 -90 -60 -112 -30"/><path d="M24 -112 L44 -150"/></g>
+    <ellipse cx="-21" cy="-6" rx="14" ry="7" fill="#ffffff" filter="url(#pp-ink)"/>
+    <ellipse cx="21" cy="-6" rx="14" ry="7" fill="#ffffff" filter="url(#pp-ink)"/>
+    <path d="M-24 -120 H24 L34 -56 H-34 Z" fill="#fbf7ee" stroke="none"/><path d="M-24 -120 H24 L34 -56 H-34 Z" fill="#bfe0cf" stroke="none" filter="url(#pp-pencil)"/><path d="M-24 -120 H24 L34 -56 H-34 Z" fill="none" filter="url(#pp-ink)"/><path d="M-24 -120 H24 L34 -56 H-34 Z" fill="none" filter="url(#pp-ink-b)" opacity="0.45"/>
+    <path d="M-40 -158 a40 40 0 1 0 80 0 a40 40 0 1 0 -80 0 Z" fill="#fbf7ee" stroke="none"/><path d="M-40 -158 a40 40 0 1 0 80 0 a40 40 0 1 0 -80 0 Z" fill="#f7e1cc" stroke="none" filter="url(#pp-pencil)"/><path d="M-40 -158 a40 40 0 1 0 80 0 a40 40 0 1 0 -80 0 Z" fill="none" filter="url(#pp-ink)"/><path d="M-40 -158 a40 40 0 1 0 80 0 a40 40 0 1 0 -80 0 Z" fill="none" filter="url(#pp-ink-b)" opacity="0.45"/>
+    <path d="M-44 -130 C-54 -214 54 -214 44 -130 L36 -132 C38 -160 30 -176 0 -178 C-30 -176 -38 -160 -36 -132 Z" fill="#2f2a28" stroke="none" filter="url(#pp-pencil)"/>
+    <path d="M-44 -130 C-54 -214 54 -214 44 -130 L36 -132 C38 -160 30 -176 0 -178 C-30 -176 -38 -160 -36 -132 Z" filter="url(#pp-ink)"/>
+    <ellipse cx="-25" cy="-138" rx="7" ry="4" fill="#f2b9c2" opacity="0.7" stroke="none"/>
+    <ellipse cx="25" cy="-138" rx="7" ry="4" fill="#f2b9c2" opacity="0.7" stroke="none"/>
+    <g fill="#1d1a1e" stroke="#1d1a1e"><path d="M-20 -150 Q-14 -159 -8 -150 M8 -150 Q14 -159 20 -150" fill="none" stroke-width="2.6"/><path d="M-10 -138 Q0 -124 10 -138 Z" fill="#d9727a" stroke-width="2.2"/></g>
+    
+  </g>
+</g>
       </svg>
       <figcaption>
         <span class="num">II</span><h2>Who comes first</h2>
@@ -521,6 +696,23 @@ pre code { font-size: 1em; }
           <use href="#keytop" stroke-width="1.4" filter="url(#pp-ink-b)"/>
           <text class="t-cmd" x="55" y="52" text-anchor="middle" stroke="none">esc</text>
         </g>
+              <!-- spot art: a person -->
+        <g transform="translate(282 985) scale(0.72)">
+  <g class="pp-who" fill="none" stroke="#1d1a1e" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round">
+    <ellipse cx="0" cy="3" rx="46" ry="7" fill="url(#pp-hatch)" stroke="none" opacity="0.8"/>
+    <g filter="url(#pp-ink)"><path d="M-12 -58 L-17 -10 M12 -58 L17 -10"/><path d="M-24 -112 C-50 -110 -70 -118 -96 -126"/><path d="M24 -112 L40 -70"/></g>
+    <ellipse cx="-21" cy="-6" rx="14" ry="7" fill="#ffffff" filter="url(#pp-ink)"/>
+    <ellipse cx="21" cy="-6" rx="14" ry="7" fill="#ffffff" filter="url(#pp-ink)"/>
+    <path d="M-24 -120 H24 L34 -56 H-34 Z" fill="#fbf7ee" stroke="none"/><path d="M-24 -120 H24 L34 -56 H-34 Z" fill="#c6b6de" stroke="none" filter="url(#pp-pencil)"/><path d="M-24 -120 H24 L34 -56 H-34 Z" fill="none" filter="url(#pp-ink)"/><path d="M-24 -120 H24 L34 -56 H-34 Z" fill="none" filter="url(#pp-ink-b)" opacity="0.45"/>
+    <path d="M-40 -158 a40 40 0 1 0 80 0 a40 40 0 1 0 -80 0 Z" fill="#fbf7ee" stroke="none"/><path d="M-40 -158 a40 40 0 1 0 80 0 a40 40 0 1 0 -80 0 Z" fill="#f7e1cc" stroke="none" filter="url(#pp-pencil)"/><path d="M-40 -158 a40 40 0 1 0 80 0 a40 40 0 1 0 -80 0 Z" fill="none" filter="url(#pp-ink)"/><path d="M-40 -158 a40 40 0 1 0 80 0 a40 40 0 1 0 -80 0 Z" fill="none" filter="url(#pp-ink-b)" opacity="0.45"/>
+    <path d="M-42 -156 C-46 -212 46 -212 42 -156 C30 -180 -30 -180 -42 -156 Z M-14 -204 a16 16 0 1 1 28 0 Z" fill="#d9ac7c" stroke="none" filter="url(#pp-pencil)"/>
+    <path d="M-42 -156 C-46 -212 46 -212 42 -156 C30 -180 -30 -180 -42 -156 Z M-14 -204 a16 16 0 1 1 28 0 Z" filter="url(#pp-ink)"/>
+    <ellipse cx="-25" cy="-138" rx="7" ry="4" fill="#f2b9c2" opacity="0.7" stroke="none"/>
+    <ellipse cx="25" cy="-138" rx="7" ry="4" fill="#f2b9c2" opacity="0.7" stroke="none"/>
+    <g fill="#1d1a1e" stroke="#1d1a1e"><circle cx="-14" cy="-152" r="4.2" class="eye"/><circle cx="14" cy="-152" r="4.2" class="eye"/><path d="M-7 -136 Q0 -129 7 -136" fill="none" stroke-width="2.4"/></g>
+    
+  </g>
+</g>
       </svg>
       <figcaption>
         <span class="num">III</span><h2>Your keys</h2>
@@ -601,6 +793,23 @@ pre code { font-size: 1em; }
             <text class="t-cmd" x="55" y="52" text-anchor="middle" stroke="none">tab</text>
           </g>
         </g>
+              <!-- spot art: a person -->
+        <g transform="translate(820 880) scale(0.78)">
+  <g class="pp-who" fill="none" stroke="#1d1a1e" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round">
+    <ellipse cx="0" cy="3" rx="46" ry="7" fill="url(#pp-hatch)" stroke="none" opacity="0.8"/>
+    <g filter="url(#pp-ink)"><path d="M-12 -58 L-17 -10 M12 -58 L17 -10"/><path d="M-24 -112 L-44 -70"/><path d="M24 -112 C40 -140 52 -165 46 -196"/></g>
+    <ellipse cx="-21" cy="-6" rx="14" ry="7" fill="#ffffff" filter="url(#pp-ink)"/>
+    <ellipse cx="21" cy="-6" rx="14" ry="7" fill="#ffffff" filter="url(#pp-ink)"/>
+    <path d="M-24 -120 H24 L34 -56 H-34 Z" fill="#fbf7ee" stroke="none"/><path d="M-24 -120 H24 L34 -56 H-34 Z" fill="#f7eedb" stroke="none" filter="url(#pp-pencil)"/><path d="M-24 -120 H24 L34 -56 H-34 Z" fill="none" filter="url(#pp-ink)"/><path d="M-24 -120 H24 L34 -56 H-34 Z" fill="none" filter="url(#pp-ink-b)" opacity="0.45"/>
+    <path d="M-40 -158 a40 40 0 1 0 80 0 a40 40 0 1 0 -80 0 Z" fill="#fbf7ee" stroke="none"/><path d="M-40 -158 a40 40 0 1 0 80 0 a40 40 0 1 0 -80 0 Z" fill="#f7e1cc" stroke="none" filter="url(#pp-pencil)"/><path d="M-40 -158 a40 40 0 1 0 80 0 a40 40 0 1 0 -80 0 Z" fill="none" filter="url(#pp-ink)"/><path d="M-40 -158 a40 40 0 1 0 80 0 a40 40 0 1 0 -80 0 Z" fill="none" filter="url(#pp-ink-b)" opacity="0.45"/>
+    <path d="M-42 -156 C-46 -214 46 -214 42 -156 C34 -176 8 -184 -6 -172 C-18 -184 -34 -176 -42 -156 Z" fill="#a8693f" stroke="none" filter="url(#pp-pencil)"/>
+    <path d="M-42 -156 C-46 -214 46 -214 42 -156 C34 -176 8 -184 -6 -172 C-18 -184 -34 -176 -42 -156 Z" filter="url(#pp-ink)"/>
+    <ellipse cx="-25" cy="-138" rx="7" ry="4" fill="#f2b9c2" opacity="0.7" stroke="none"/>
+    <ellipse cx="25" cy="-138" rx="7" ry="4" fill="#f2b9c2" opacity="0.7" stroke="none"/>
+    <g fill="#1d1a1e" stroke="#1d1a1e"><path d="M-20 -150 Q-14 -159 -8 -150 M8 -150 Q14 -159 20 -150" fill="none" stroke-width="2.6"/><path d="M-10 -138 Q0 -124 10 -138 Z" fill="#d9727a" stroke-width="2.2"/></g>
+    
+  </g>
+</g>
       </svg>
       <figcaption>
         <span class="num">IV</span><h2>Word by word</h2>
@@ -674,6 +883,8 @@ pre code { font-size: 1em; }
     <p class="lede">Prebuilt binaries from the <a href="https://github.com/duylongpro99/wuts-that-bash/releases/tag/v0.1.0">v0.1.0 release</a>. No Rust toolchain needed.</p>
     <p class="note">Requires zsh 5.3 or newer. Your existing <code>~/.zsh_history</code> works from the first prompt.</p>
 
+    <div class="side-row">
+    <div>
     <fieldset>
       <legend>Choose your platform</legend>
       <div class="platforms">
@@ -724,6 +935,39 @@ echo 'eval "$(wib init zsh)"' &gt;&gt; ~/.zshrc</code></pre></div>
         <p>Type <code>gi</code> and your git commands are already there.</p>
       </li>
     </ol>
+    </div>
+    <figure class="side-art helper">
+<svg viewBox="0 0 360 440" aria-hidden="true" focusable="false" id="helper" data-mood="idle">
+  <rect width="360" height="440" fill="#f6f1e6" filter="url(#pp-paper)"/>
+  <g class="who">
+  <g transform="translate(180 412) scale(1.15)" fill="none" stroke="#1d1a1e" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">
+    <ellipse cx="0" cy="3" rx="46" ry="7" fill="url(#pp-hatch)" stroke="none" opacity="0.8"/>
+    <g filter="url(#pp-ink)"><path d="M-12 -58 L-17 -10 M12 -58 L17 -10"/></g>
+    <ellipse cx="-21" cy="-6" rx="14" ry="7" fill="#ffffff" filter="url(#pp-ink)"/>
+    <ellipse cx="21" cy="-6" rx="14" ry="7" fill="#ffffff" filter="url(#pp-ink)"/>
+    <path d="M-24 -120 H24 L34 -56 H-34 Z" fill="#fbf7ee" stroke="none"/><path d="M-24 -120 H24 L34 -56 H-34 Z" fill="#bfe0cf" stroke="none" filter="url(#pp-pencil)"/><path d="M-24 -120 H24 L34 -56 H-34 Z" fill="none" filter="url(#pp-ink)"/><path d="M-24 -120 H24 L34 -56 H-34 Z" fill="none" filter="url(#pp-ink-b)" opacity="0.45"/>
+    <path d="M-40 -158 a40 40 0 1 0 80 0 a40 40 0 1 0 -80 0 Z" fill="#fbf7ee" stroke="none"/><path d="M-40 -158 a40 40 0 1 0 80 0 a40 40 0 1 0 -80 0 Z" fill="#f7e1cc" stroke="none" filter="url(#pp-pencil)"/><path d="M-40 -158 a40 40 0 1 0 80 0 a40 40 0 1 0 -80 0 Z" fill="none" filter="url(#pp-ink)"/><path d="M-40 -158 a40 40 0 1 0 80 0 a40 40 0 1 0 -80 0 Z" fill="none" filter="url(#pp-ink-b)" opacity="0.45"/>
+    <path d="M-42 -156 C-46 -212 46 -212 42 -156 C30 -180 -30 -180 -42 -156 Z M-14 -204 a16 16 0 1 1 28 0 Z" fill="#2f2a28" stroke="none" filter="url(#pp-pencil)"/>
+    <path d="M-42 -156 C-46 -212 46 -212 42 -156 C30 -180 -30 -180 -42 -156 Z M-14 -204 a16 16 0 1 1 28 0 Z" filter="url(#pp-ink)"/>
+    <ellipse cx="-25" cy="-138" rx="7" ry="4" fill="#f2b9c2" opacity="0.7" stroke="none"/>
+    <ellipse cx="25" cy="-138" rx="7" ry="4" fill="#f2b9c2" opacity="0.7" stroke="none"/>
+    <g class="f-smile"><g fill="#1d1a1e" stroke="#1d1a1e"><circle cx="-14" cy="-152" r="4.2" class="eye"/><circle cx="14" cy="-152" r="4.2" class="eye"/><path d="M-7 -136 Q0 -129 7 -136" fill="none" stroke-width="2.4"/></g></g><g class="f-happy"><g fill="#1d1a1e" stroke="#1d1a1e"><path d="M-20 -150 Q-14 -159 -8 -150 M8 -150 Q14 -159 20 -150" fill="none" stroke-width="2.6"/><path d="M-10 -138 Q0 -124 10 -138 Z" fill="#d9727a" stroke-width="2.2"/></g></g><g class="f-oops"><g fill="#1d1a1e" stroke="#1d1a1e"><circle cx="-14" cy="-150" r="4.2" class="eye"/><circle cx="14" cy="-150" r="4.2" class="eye"/><path d="M-22 -166 L-8 -162 M22 -166 L8 -162" fill="none" stroke-width="2.2"/><path d="M-9 -132 q4.5 -5 9 0 q4.5 5 9 0" fill="none" stroke-width="2.4"/></g></g>
+  </g>
+  <g class="sign" fill="none" stroke="#1d1a1e" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M60 268 H300 V352 H60 Z" fill="#fbf7ee" stroke="none"/><path d="M60 268 H300 V352 H60 Z" fill="#f7eedb" stroke="none" filter="url(#pp-pencil)"/><path d="M60 268 H300 V352 H60 Z" fill="none" filter="url(#pp-ink)"/><path d="M60 268 H300 V352 H60 Z" fill="none" filter="url(#pp-ink-b)" opacity="0.45"/>
+    <circle cx="84" cy="270" r="10" fill="#f7e1cc" filter="url(#pp-ink)"/>
+    <circle cx="276" cy="270" r="10" fill="#f7e1cc" filter="url(#pp-ink)"/>
+    <text class="t-sign" id="helper-os" x="180" y="306" text-anchor="middle" stroke="none" fill="#1d1a1e">macOS</text>
+    <text class="t-sign-sub" id="helper-arch" x="180" y="338" text-anchor="middle" stroke="none" fill="#1d1a1e">Apple Silicon</text>
+  </g>
+  </g>
+  <text class="f-happy" x="282" y="120" font-family="Cutive Mono, Georgia, serif" font-size="64" fill="#2f6b3a">✓</text>
+  <text class="f-oops" x="282" y="120" font-family="Cutive Mono, Georgia, serif" font-size="64" fill="#933323">✗</text>
+  <path d="M16 414 H344" fill="none" stroke="#1d1a1e" stroke-width="2" stroke-linecap="round" filter="url(#pp-ink)"/>
+</svg>
+      <figcaption>Copy a command and watch.</figcaption>
+    </figure>
+    </div>
 
     <div class="release-links">
       <a href="https://github.com/duylongpro99/wuts-that-bash/releases/tag/v0.1.0">All files in v0.1.0</a>
@@ -734,18 +978,95 @@ echo 'eval "$(wib init zsh)"' &gt;&gt; ~/.zshrc</code></pre></div>
   <section class="section">
     <h2>Your keys keep their meaning</h2>
     <p class="lede">Keys only change once you press <kbd>↓</kbd> to select a line. Ctrl-R, completion and history are untouched.</p>
+    <div class="side-row">
     <dl class="keys">
-      <div><dt><kbd>↓</kbd></dt><dd>Start selecting, then move down the list</dd></div>
-      <div><dt><kbd>Enter</kbd></dt><dd>Run the selected command</dd></div>
-      <div><dt><kbd>Tab</kbd></dt><dd>Fill the selected command without running it</dd></div>
-      <div><dt><kbd>Shift</kbd> <kbd>Tab</kbd></dt><dd>Fill it word by word, to reuse it as a template</dd></div>
-      <div><dt><kbd>Esc</kbd></dt><dd>Hide the list until you type again</dd></div>
-      <div><dt><kbd>wib forget</kbd></dt><dd>Never suggest a wrong or secret command again</dd></div>
+      <div data-key="down"><dt><kbd>↓</kbd></dt><dd>Start selecting, then move down the list</dd></div>
+      <div data-key="enter"><dt><kbd>Enter</kbd></dt><dd>Run the selected command</dd></div>
+      <div data-key="tab"><dt><kbd>Tab</kbd></dt><dd>Fill the selected command without running it</dd></div>
+      <div data-key="shift-tab"><dt><kbd>Shift</kbd> <kbd>Tab</kbd></dt><dd>Fill it word by word, to reuse it as a template</dd></div>
+      <div data-key="esc"><dt><kbd>Esc</kbd></dt><dd>Hide the list until you type again</dd></div>
+      <div data-key="forget"><dt><kbd>wib forget</kbd></dt><dd>Never suggest a wrong or secret command again</dd></div>
     </dl>
+    <figure class="side-art presser">
+<svg viewBox="0 0 380 360" aria-hidden="true" focusable="false" id="presser" data-mood="idle">
+  <rect width="380" height="360" fill="#f6f1e6" filter="url(#pp-paper)"/>
+  <ellipse cx="140" cy="334" rx="120" ry="8" fill="url(#pp-hatch)" opacity="0.8"/>
+  <g class="cap" fill="none" stroke="#1d1a1e" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M30 196 H250 V312 H30 Z" fill="#fbf7ee" stroke="none"/><path d="M30 196 H250 V312 H30 Z" fill="#c6b6de" stroke="none" filter="url(#pp-pencil)"/><path d="M30 196 H250 V312 H30 Z" fill="none" filter="url(#pp-ink)"/><path d="M30 196 H250 V312 H30 Z" fill="none" filter="url(#pp-ink-b)" opacity="0.45"/>
+    <path d="M44 206 H236 V288 H44 Z" stroke-width="1.6" filter="url(#pp-ink-b)"/>
+    <text class="t-cap" id="presser-key" x="140" y="260" text-anchor="middle" stroke="none" fill="#1d1a1e">↓</text>
+  </g>
+  <g class="who">
+  <g transform="translate(316 330) scale(0.85)" fill="none" stroke="#1d1a1e" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">
+    <ellipse cx="0" cy="3" rx="46" ry="7" fill="url(#pp-hatch)" stroke="none" opacity="0.8"/>
+    <g filter="url(#pp-ink)"><path d="M-12 -58 L-17 -10 M12 -58 L17 -10"/><path d="M-24 -112 C-44 -118 -56 -122 -72 -124"/><path d="M24 -112 L40 -70"/></g>
+    <ellipse cx="-21" cy="-6" rx="14" ry="7" fill="#ffffff" filter="url(#pp-ink)"/>
+    <ellipse cx="21" cy="-6" rx="14" ry="7" fill="#ffffff" filter="url(#pp-ink)"/>
+    <path d="M-24 -120 H24 L34 -56 H-34 Z" fill="#fbf7ee" stroke="none"/><path d="M-24 -120 H24 L34 -56 H-34 Z" fill="#c4dbe8" stroke="none" filter="url(#pp-pencil)"/><path d="M-24 -120 H24 L34 -56 H-34 Z" fill="none" filter="url(#pp-ink)"/><path d="M-24 -120 H24 L34 -56 H-34 Z" fill="none" filter="url(#pp-ink-b)" opacity="0.45"/>
+    <path d="M-40 -158 a40 40 0 1 0 80 0 a40 40 0 1 0 -80 0 Z" fill="#fbf7ee" stroke="none"/><path d="M-40 -158 a40 40 0 1 0 80 0 a40 40 0 1 0 -80 0 Z" fill="#f7e1cc" stroke="none" filter="url(#pp-pencil)"/><path d="M-40 -158 a40 40 0 1 0 80 0 a40 40 0 1 0 -80 0 Z" fill="none" filter="url(#pp-ink)"/><path d="M-40 -158 a40 40 0 1 0 80 0 a40 40 0 1 0 -80 0 Z" fill="none" filter="url(#pp-ink-b)" opacity="0.45"/>
+    <path d="M-42 -156 C-46 -214 46 -214 42 -156 C34 -176 8 -184 -6 -172 C-18 -184 -34 -176 -42 -156 Z" fill="#6b5a4e" stroke="none" filter="url(#pp-pencil)"/>
+    <path d="M-42 -156 C-46 -214 46 -214 42 -156 C34 -176 8 -184 -6 -172 C-18 -184 -34 -176 -42 -156 Z" filter="url(#pp-ink)"/>
+    <ellipse cx="-25" cy="-138" rx="7" ry="4" fill="#f2b9c2" opacity="0.7" stroke="none"/>
+    <ellipse cx="25" cy="-138" rx="7" ry="4" fill="#f2b9c2" opacity="0.7" stroke="none"/>
+    <g class="f-smile"><g fill="#1d1a1e" stroke="#1d1a1e"><circle cx="-14" cy="-152" r="4.2" class="eye"/><circle cx="14" cy="-152" r="4.2" class="eye"/><path d="M-7 -136 Q0 -129 7 -136" fill="none" stroke-width="2.4"/></g></g><g class="f-happy"><g fill="#1d1a1e" stroke="#1d1a1e"><path d="M-20 -150 Q-14 -159 -8 -150 M8 -150 Q14 -159 20 -150" fill="none" stroke-width="2.6"/><path d="M-10 -138 Q0 -124 10 -138 Z" fill="#d9727a" stroke-width="2.2"/></g></g>
+  </g>
+  </g>
+  <path d="M14 332 H366" fill="none" stroke="#1d1a1e" stroke-width="2" stroke-linecap="round" filter="url(#pp-ink)"/>
+</svg>
+      <figcaption>Press ↓, Enter, Tab or Esc here, or tap a row.</figcaption>
+    </figure>
+    </div>
   </section>
 </main>
 
 <footer class="foot">
+  <svg viewBox="0 0 1080 230" aria-hidden="true" focusable="false" class="goodbye" id="goodbye">
+  <rect width="1080" height="230" fill="#f6f1e6" filter="url(#pp-paper)"/>
+  <g class="wave" data-i="0"><g class="who"><g transform="translate(150 212) scale(0.82)" fill="none" stroke="#1d1a1e" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><ellipse cx="0" cy="3" rx="46" ry="7" fill="url(#pp-hatch)" stroke="none" opacity="0.8"/>
+    <g filter="url(#pp-ink)"><path d="M-12 -58 L-17 -10 M12 -58 L17 -10"/><path d="M-24 -112 L-44 -70"/><path d="M24 -112 C40 -140 52 -165 46 -196"/></g>
+    <ellipse cx="-21" cy="-6" rx="14" ry="7" fill="#ffffff" filter="url(#pp-ink)"/>
+    <ellipse cx="21" cy="-6" rx="14" ry="7" fill="#ffffff" filter="url(#pp-ink)"/>
+    <path d="M-24 -120 H24 L34 -56 H-34 Z" fill="#fbf7ee" stroke="none"/><path d="M-24 -120 H24 L34 -56 H-34 Z" fill="#c6b6de" stroke="none" filter="url(#pp-pencil)"/><path d="M-24 -120 H24 L34 -56 H-34 Z" fill="none" filter="url(#pp-ink)"/><path d="M-24 -120 H24 L34 -56 H-34 Z" fill="none" filter="url(#pp-ink-b)" opacity="0.45"/>
+    <path d="M-40 -158 a40 40 0 1 0 80 0 a40 40 0 1 0 -80 0 Z" fill="#fbf7ee" stroke="none"/><path d="M-40 -158 a40 40 0 1 0 80 0 a40 40 0 1 0 -80 0 Z" fill="#f7e1cc" stroke="none" filter="url(#pp-pencil)"/><path d="M-40 -158 a40 40 0 1 0 80 0 a40 40 0 1 0 -80 0 Z" fill="none" filter="url(#pp-ink)"/><path d="M-40 -158 a40 40 0 1 0 80 0 a40 40 0 1 0 -80 0 Z" fill="none" filter="url(#pp-ink-b)" opacity="0.45"/>
+    <path d="M-44 -130 C-54 -214 54 -214 44 -130 L36 -132 C38 -160 30 -176 0 -178 C-30 -176 -38 -160 -36 -132 Z" fill="#a8693f" stroke="none" filter="url(#pp-pencil)"/>
+    <path d="M-44 -130 C-54 -214 54 -214 44 -130 L36 -132 C38 -160 30 -176 0 -178 C-30 -176 -38 -160 -36 -132 Z" filter="url(#pp-ink)"/>
+    <ellipse cx="-25" cy="-138" rx="7" ry="4" fill="#f2b9c2" opacity="0.7" stroke="none"/>
+    <ellipse cx="25" cy="-138" rx="7" ry="4" fill="#f2b9c2" opacity="0.7" stroke="none"/><g class="f-happy"><g fill="#1d1a1e" stroke="#1d1a1e"><path d="M-20 -150 Q-14 -159 -8 -150 M8 -150 Q14 -159 20 -150" fill="none" stroke-width="2.6"/><path d="M-10 -138 Q0 -124 10 -138 Z" fill="#d9727a" stroke-width="2.2"/></g></g></g></g></g>
+  <g class="wave" data-i="1"><g class="who"><g transform="translate(400 212) scale(0.82)" fill="none" stroke="#1d1a1e" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><ellipse cx="0" cy="3" rx="46" ry="7" fill="url(#pp-hatch)" stroke="none" opacity="0.8"/>
+    <g filter="url(#pp-ink)"><path d="M-12 -58 L-17 -10 M12 -58 L17 -10"/><path d="M-24 -112 C-40 -140 -52 -165 -46 -196"/><path d="M24 -112 L44 -70"/></g>
+    <ellipse cx="-21" cy="-6" rx="14" ry="7" fill="#ffffff" filter="url(#pp-ink)"/>
+    <ellipse cx="21" cy="-6" rx="14" ry="7" fill="#ffffff" filter="url(#pp-ink)"/>
+    <path d="M-24 -120 H24 L34 -56 H-34 Z" fill="#fbf7ee" stroke="none"/><path d="M-24 -120 H24 L34 -56 H-34 Z" fill="#c4dbe8" stroke="none" filter="url(#pp-pencil)"/><path d="M-24 -120 H24 L34 -56 H-34 Z" fill="none" filter="url(#pp-ink)"/><path d="M-24 -120 H24 L34 -56 H-34 Z" fill="none" filter="url(#pp-ink-b)" opacity="0.45"/>
+    <path d="M-40 -158 a40 40 0 1 0 80 0 a40 40 0 1 0 -80 0 Z" fill="#fbf7ee" stroke="none"/><path d="M-40 -158 a40 40 0 1 0 80 0 a40 40 0 1 0 -80 0 Z" fill="#f7e1cc" stroke="none" filter="url(#pp-pencil)"/><path d="M-40 -158 a40 40 0 1 0 80 0 a40 40 0 1 0 -80 0 Z" fill="none" filter="url(#pp-ink)"/><path d="M-40 -158 a40 40 0 1 0 80 0 a40 40 0 1 0 -80 0 Z" fill="none" filter="url(#pp-ink-b)" opacity="0.45"/>
+    <path d="M-42 -156 C-46 -214 46 -214 42 -156 C34 -176 8 -184 -6 -172 C-18 -184 -34 -176 -42 -156 Z" fill="#2f2a28" stroke="none" filter="url(#pp-pencil)"/>
+    <path d="M-42 -156 C-46 -214 46 -214 42 -156 C34 -176 8 -184 -6 -172 C-18 -184 -34 -176 -42 -156 Z" filter="url(#pp-ink)"/>
+    <ellipse cx="-25" cy="-138" rx="7" ry="4" fill="#f2b9c2" opacity="0.7" stroke="none"/>
+    <ellipse cx="25" cy="-138" rx="7" ry="4" fill="#f2b9c2" opacity="0.7" stroke="none"/><g class="f-smile"><g fill="#1d1a1e" stroke="#1d1a1e"><circle cx="-14" cy="-152" r="4.2" class="eye"/><circle cx="14" cy="-152" r="4.2" class="eye"/><path d="M-7 -136 Q0 -129 7 -136" fill="none" stroke-width="2.4"/></g></g></g></g></g>
+  <g class="wave" data-i="2"><g class="who"><g transform="translate(650 212) scale(0.82)" fill="none" stroke="#1d1a1e" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><ellipse cx="0" cy="3" rx="46" ry="7" fill="url(#pp-hatch)" stroke="none" opacity="0.8"/>
+    <g filter="url(#pp-ink)"><path d="M-12 -58 L-17 -10 M12 -58 L17 -10"/><path d="M-24 -112 L-52 -168"/><path d="M24 -112 L52 -168"/></g>
+    <ellipse cx="-21" cy="-6" rx="14" ry="7" fill="#ffffff" filter="url(#pp-ink)"/>
+    <ellipse cx="21" cy="-6" rx="14" ry="7" fill="#ffffff" filter="url(#pp-ink)"/>
+    <path d="M-24 -120 H24 L34 -56 H-34 Z" fill="#fbf7ee" stroke="none"/><path d="M-24 -120 H24 L34 -56 H-34 Z" fill="#f7eedb" stroke="none" filter="url(#pp-pencil)"/><path d="M-24 -120 H24 L34 -56 H-34 Z" fill="none" filter="url(#pp-ink)"/><path d="M-24 -120 H24 L34 -56 H-34 Z" fill="none" filter="url(#pp-ink-b)" opacity="0.45"/>
+    <path d="M-40 -158 a40 40 0 1 0 80 0 a40 40 0 1 0 -80 0 Z" fill="#fbf7ee" stroke="none"/><path d="M-40 -158 a40 40 0 1 0 80 0 a40 40 0 1 0 -80 0 Z" fill="#f7e1cc" stroke="none" filter="url(#pp-pencil)"/><path d="M-40 -158 a40 40 0 1 0 80 0 a40 40 0 1 0 -80 0 Z" fill="none" filter="url(#pp-ink)"/><path d="M-40 -158 a40 40 0 1 0 80 0 a40 40 0 1 0 -80 0 Z" fill="none" filter="url(#pp-ink-b)" opacity="0.45"/>
+    <path d="M-42 -156 C-46 -212 46 -212 42 -156 C30 -180 -30 -180 -42 -156 Z M-14 -204 a16 16 0 1 1 28 0 Z" fill="#d9ac7c" stroke="none" filter="url(#pp-pencil)"/>
+    <path d="M-42 -156 C-46 -212 46 -212 42 -156 C30 -180 -30 -180 -42 -156 Z M-14 -204 a16 16 0 1 1 28 0 Z" filter="url(#pp-ink)"/>
+    <ellipse cx="-25" cy="-138" rx="7" ry="4" fill="#f2b9c2" opacity="0.7" stroke="none"/>
+    <ellipse cx="25" cy="-138" rx="7" ry="4" fill="#f2b9c2" opacity="0.7" stroke="none"/><g class="f-happy"><g fill="#1d1a1e" stroke="#1d1a1e"><path d="M-20 -150 Q-14 -159 -8 -150 M8 -150 Q14 -159 20 -150" fill="none" stroke-width="2.6"/><path d="M-10 -138 Q0 -124 10 -138 Z" fill="#d9727a" stroke-width="2.2"/></g></g></g></g></g>
+  <g class="wave" data-i="3"><g class="who">
+  <path d="M944 24 H1048 V80 H944 Z" fill="#fbf7ee"/><path d="M944 24 H1048 V80 H944 Z" fill="#e0b04f" filter="url(#pp-pencil)"/>
+  <path d="M944 24 H1048 V80 H944 Z" fill="none" stroke="#1d1a1e" stroke-width="2.2" stroke-linejoin="round" filter="url(#pp-ink)"/>
+  <text class="t-sign" x="996" y="62" text-anchor="middle" fill="#1d1a1e">bye!</text><g transform="translate(900 212) scale(0.82)" fill="none" stroke="#1d1a1e" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><ellipse cx="0" cy="3" rx="46" ry="7" fill="url(#pp-hatch)" stroke="none" opacity="0.8"/>
+    <g filter="url(#pp-ink)"><path d="M-12 -58 L-17 -10 M12 -58 L17 -10"/><path d="M-24 -112 L-44 -70"/><path d="M24 -112 C40 -140 52 -165 46 -196"/></g>
+    <ellipse cx="-21" cy="-6" rx="14" ry="7" fill="#ffffff" filter="url(#pp-ink)"/>
+    <ellipse cx="21" cy="-6" rx="14" ry="7" fill="#ffffff" filter="url(#pp-ink)"/>
+    <path d="M-24 -120 H24 L34 -56 H-34 Z" fill="#fbf7ee" stroke="none"/><path d="M-24 -120 H24 L34 -56 H-34 Z" fill="#bfe0cf" stroke="none" filter="url(#pp-pencil)"/><path d="M-24 -120 H24 L34 -56 H-34 Z" fill="none" filter="url(#pp-ink)"/><path d="M-24 -120 H24 L34 -56 H-34 Z" fill="none" filter="url(#pp-ink-b)" opacity="0.45"/>
+    <path d="M-40 -158 a40 40 0 1 0 80 0 a40 40 0 1 0 -80 0 Z" fill="#fbf7ee" stroke="none"/><path d="M-40 -158 a40 40 0 1 0 80 0 a40 40 0 1 0 -80 0 Z" fill="#f7e1cc" stroke="none" filter="url(#pp-pencil)"/><path d="M-40 -158 a40 40 0 1 0 80 0 a40 40 0 1 0 -80 0 Z" fill="none" filter="url(#pp-ink)"/><path d="M-40 -158 a40 40 0 1 0 80 0 a40 40 0 1 0 -80 0 Z" fill="none" filter="url(#pp-ink-b)" opacity="0.45"/>
+    <path d="M-42 -156 C-46 -214 46 -214 42 -156 C34 -176 8 -184 -6 -172 C-18 -184 -34 -176 -42 -156 Z" fill="#6b5a4e" stroke="none" filter="url(#pp-pencil)"/>
+    <path d="M-42 -156 C-46 -214 46 -214 42 -156 C34 -176 8 -184 -6 -172 C-18 -184 -34 -176 -42 -156 Z" filter="url(#pp-ink)"/>
+    <ellipse cx="-25" cy="-138" rx="7" ry="4" fill="#f2b9c2" opacity="0.7" stroke="none"/>
+    <ellipse cx="25" cy="-138" rx="7" ry="4" fill="#f2b9c2" opacity="0.7" stroke="none"/><g class="f-smile"><g fill="#1d1a1e" stroke="#1d1a1e"><circle cx="-14" cy="-152" r="4.2" class="eye"/><circle cx="14" cy="-152" r="4.2" class="eye"/><path d="M-7 -136 Q0 -129 7 -136" fill="none" stroke-width="2.4"/></g></g></g></g></g>
+  <path d="M30 214 H1050" fill="none" stroke="#1d1a1e" stroke-width="2" stroke-linecap="round" filter="url(#pp-ink)"/>
+</svg>
   <div>
     <span>wib, what is that bash? MIT licensed.</span>
     <ul>
@@ -767,6 +1088,30 @@ echo 'eval "$(wib init zsh)"' &gt;&gt; ~/.zshrc</code></pre></div>
     if (el) el.checked = true;
   }
 
+  // Restart a one-shot CSS animation by removing and re-adding its class.
+  const retrigger = (el, cls) => { el.classList.remove(cls); void el.getBoundingClientRect(); el.classList.add(cls); };
+
+  // The install helper holds a sign naming the chosen platform.
+  const helper = document.getElementById('helper');
+  const signs = { 'mac-arm': ['macOS', 'Apple Silicon'], 'mac-x64': ['macOS', 'Intel'], 'linux-x64': ['Linux', 'x86_64'], 'linux-arm': ['Linux', 'arm64'] };
+  const showPlatform = () => {
+    const picked = document.querySelector('input[name="platform"]:checked');
+    const [os, arch] = signs[picked ? picked.value : 'mac-arm'];
+    document.getElementById('helper-os').textContent = os;
+    document.getElementById('helper-arch').textContent = arch;
+  };
+  let helperTimer;
+  const helperMood = (mood) => {
+    if (!helper) return;
+    clearTimeout(helperTimer);
+    helper.dataset.mood = mood;
+    if (mood !== 'idle') { retrigger(helper, 'hop'); helperTimer = setTimeout(() => { helper.dataset.mood = 'idle'; }, 1800); }
+  };
+  if (helper) {
+    showPlatform();
+    document.querySelectorAll('input[name="platform"]').forEach((r) => r.addEventListener('change', () => { showPlatform(); retrigger(helper, 'hop'); }));
+  }
+
   // Copy buttons on every code block: plain text labels, no icons.
   document.querySelectorAll('.code').forEach((box) => {
     const btn = document.createElement('button');
@@ -780,7 +1125,9 @@ echo 'eval "$(wib init zsh)"' &gt;&gt; ~/.zshrc</code></pre></div>
         btn.dataset.state = 'done';
         btn.textContent = 'copied ✓';
         btn.setAttribute('aria-label', 'Copied');
+        helperMood('done');
       } catch {
+        helperMood('error');
         btn.dataset.state = 'error';
         btn.textContent = 'select it ✗';
         btn.setAttribute('aria-label', 'Copy failed, select the text instead');
@@ -790,54 +1137,323 @@ echo 'eval "$(wib init zsh)"' &gt;&gt; ~/.zshrc</code></pre></div>
     box.appendChild(btn);
   });
 
-  // Typing demo. Static first frame stays when motion is reduced or JS is off.
-  if (matchMedia('(prefers-reduced-motion: reduce)').matches) return;
-  const input = document.getElementById('demo-input');
+  // Each plate's person hops once as the plate scrolls into view.
+  if ('IntersectionObserver' in window) {
+    const io = new IntersectionObserver((entries) => {
+      entries.forEach((e) => {
+        if (!e.isIntersecting) return;
+        e.target.classList.add('seen');
+        e.target.addEventListener('animationend', () => e.target.classList.remove('seen'), { once: true });
+        io.unobserve(e.target);
+      });
+    }, { threshold: 0.5 });
+    document.querySelectorAll('.plate').forEach((p) => io.observe(p));
+  }
+  document.querySelectorAll('.plate').forEach((p) => p.addEventListener('click', () => retrigger(p, 'seen')));
+
+  // Tap the person at the desk and they say what's on their mind.
+  const buddyBtn = document.getElementById('buddy-btn');
+  const buddySvg = document.getElementById('buddy');
+  const lines = [
+    'What was that rsync flag?',
+    'Two letters. That is all.',
+    'Ctrl-R? Not today.',
+    'gti status. Again.',
+    'It is in here somewhere.',
+    'Nothing leaves this desk.',
+    'Five milliseconds. Easy.',
+  ];
+  let line = -1, talkTimer;
+  if (buddyBtn && buddySvg) {
+    buddyBtn.addEventListener('click', () => {
+      line = (line + 1) % lines.length;
+      document.getElementById('buddy-say').textContent = lines[line];
+      document.getElementById('buddy-said').textContent = lines[line];
+      buddySvg.dataset.talk = '';
+      retrigger(buddySvg, 'hop');
+      clearTimeout(talkTimer);
+      talkTimer = setTimeout(() => { delete buddySvg.dataset.talk; }, 3200);
+    });
+  }
+
+  // The key list: pressing a wib key anywhere, or tapping a row, shows it on the big keycap.
+  const presser = document.getElementById('presser');
+  const capText = document.getElementById('presser-key');
+  const capLabels = { down: '↓', enter: 'enter', tab: 'tab', 'shift-tab': 'shift tab', esc: 'esc', forget: 'wib forget' };
+  let pressTimer;
+  const press = (key) => {
+    if (!presser || !capLabels[key]) return;
+    const label = capLabels[key];
+    capText.textContent = label;
+    capText.setAttribute('font-size', label.length > 6 ? '28' : '40');
+    presser.dataset.mood = 'hit';
+    retrigger(presser, 'hop');
+    document.querySelectorAll('.keys > div').forEach((row) => row.classList.toggle('hit', row.dataset.key === key));
+    clearTimeout(pressTimer);
+    pressTimer = setTimeout(() => {
+      presser.dataset.mood = 'idle';
+      document.querySelectorAll('.keys > div.hit').forEach((row) => row.classList.remove('hit'));
+    }, 900);
+  };
+  // Only shows what was pressed; never changes what the key does.
+  document.addEventListener('keydown', (e) => {
+    if (e.repeat || e.ctrlKey || e.metaKey || e.altKey) return;
+    const key = { ArrowDown: 'down', Enter: 'enter', Escape: 'esc', Tab: e.shiftKey ? 'shift-tab' : 'tab' }[e.key];
+    if (key) press(key);
+  });
+  document.querySelectorAll('.keys > div').forEach((row) => row.addEventListener('click', () => press(row.dataset.key)));
+
+  // Footer: each waving person hops when tapped.
+  document.querySelectorAll('#goodbye .wave').forEach((w) => w.addEventListener('click', () => retrigger(w, 'hop')));
+
+  const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const buddy = document.getElementById('buddy');
+  let oopsUntil = 0;
+  const mood = (m) => {
+    if (!buddy || Date.now() < oopsUntil) return;
+    if (buddy.dataset.mood !== m && (m === 'found' || m === 'oops')) retrigger(buddy, 'hop');
+    buddy.dataset.mood = m;
+  };
+
+  // Everyone blinks now and then, each on their own clock.
+  document.querySelectorAll('circle.eye').forEach((eye) => {
+    const face = eye.parentNode;
+    if (face.style.getPropertyValue('--blink')) return;
+    face.style.setProperty('--blink', (4 + Math.random() * 3).toFixed(2) + 's');
+    face.style.setProperty('--blink-at', (-Math.random() * 6).toFixed(2) + 's');
+  });
+
+  // The footer crowd hops one after another when you reach the bottom.
+  const crowd = document.getElementById('goodbye');
+  if (crowd && 'IntersectionObserver' in window) {
+    const seen = new IntersectionObserver((entries) => {
+      if (!entries.some((e) => e.isIntersecting)) return;
+      crowd.querySelectorAll('.wave').forEach((w, i) => setTimeout(() => retrigger(w, 'hop'), i * 140));
+      seen.disconnect();
+    }, { threshold: 0.6 });
+    seen.observe(crowd);
+  }
+
+  // ---- The terminal. It plays by itself until you click it; then it is yours.
+  const term = document.getElementById('term');
+  const shown = document.getElementById('demo-input');
+  const cursor = term.querySelector('.cursor');
+  const field = document.getElementById('try');
+  const tryBtn = document.getElementById('try-btn');
   const list = document.getElementById('demo-list');
   const caption = document.getElementById('demo-caption');
+  const out = document.getElementById('term-out');
   const esc = (s) => s.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 
-  // Each step: typed text, suggestions as [before, highlighted, after] parts, selected index.
-  const scenes = [
-    { caption: 'Prefix match: your most used git commands come first.', steps: [
-      ['g', [['', 'g', 'it push origin master'], ['', 'g', 'it status'], ['', 'g', 'rep -rn TODO src'], ['', 'g', 'it commit -m "fix bug"']]],
-      ['gi', [['', 'gi', 't push origin master'], ['', 'gi', 't status'], ['', 'gi', 't commit -m "fix bug"']]],
-      ['gi', [['', 'gi', 't push origin master'], ['', 'gi', 't status'], ['', 'gi', 't commit -m "fix bug"']], 0],
-    ]},
-    { caption: 'Word starts: dcup finds docker compose up.', steps: [
-      ['d', [['', 'd', 'ocker compose up -d'], ['', 'd', 'ocker ps'], ['', 'd', 'u -sh node_modules']]],
-      ['dc', [['', 'd', 'ocker ', 'c', 'ompose up -d'], ['', 'd', 'ocker ', 'c', 'ompose logs -f api']]],
-      ['dcu', [['', 'd', 'ocker ', 'c', 'ompose ', 'u', 'p -d']]],
-      ['dcup', [['', 'd', 'ocker ', 'c', 'ompose ', 'up', ' -d']]],
-      ['dcup', [['', 'd', 'ocker ', 'c', 'ompose ', 'up', ' -d']], 0],
-    ]},
-    { caption: 'Chunks: each one starts a word, so gi st means git status.', steps: [
-      ['gi ', [['', 'gi', 't push origin master'], ['', 'gi', 't status'], ['', 'gi', 't stash pop']]],
-      ['gi s', [['', 'gi', 't ', 's', 'tatus'], ['', 'gi', 't ', 's', 'tash pop']]],
-      ['gi st', [['', 'gi', 't ', 'st', 'atus'], ['', 'gi', 't ', 'st', 'ash pop']]],
-      ['gi st', [['', 'gi', 't ', 'st', 'atus'], ['', 'gi', 't ', 'st', 'ash pop']], 0],
-    ]},
-  ];
+  // A sample history: command, times run, days since last run, ran in this repo, ever worked.
+  const history = [
+    ['git push origin master', 40, 0, true, true], ['git status', 38, 0, true, true],
+    ['git commit -m "fix bug"', 20, 1, true, true], ['git pull origin master', 15, 2, true, true],
+    ['git log --oneline -20', 9, 1, true, true], ['git stash pop', 6, 3, false, true],
+    ['git checkout -b feature/login', 4, 5, true, true], ['grep -rn TODO src', 5, 4, true, true],
+    ['gti status', 3, 2, true, false], ['docker compose up -d', 18, 0, true, true],
+    ['docker compose logs -f api', 9, 1, true, true], ['docker ps', 14, 0, false, true],
+    ['du -sh node_modules', 2, 9, false, true], ['cargo build --release', 12, 0, false, true],
+    ['cargo test', 22, 0, false, true], ['cargo clippy -- -D warnings', 7, 2, false, true],
+    ['npm run dev', 11, 3, false, true], ['npm install', 5, 6, false, true],
+    ['kubectl get pods -n staging', 8, 1, false, true], ['kubectl logs -f deploy/api', 4, 2, false, true],
+    ['ssh deploy@staging', 6, 4, false, true], ['rsync -avz --progress dist/ deploy@staging:/srv/app', 3, 8, true, true],
+    ['make test', 5, 5, false, true], ['ls -la', 30, 0, false, true], ['cd ~/code/api', 25, 0, false, true],
+    ['brew upgrade', 2, 12, false, true], ['python3 -m http.server 8000', 3, 7, false, true],
+    ['tar -xzf wib.tar.gz', 1, 10, false, true],
+  ].map(([cmd, n, days, here, ok]) => ({ cmd, n, days, here, ok }));
+  // Programs this pretend machine has; anything else is "command not found".
+  const known = new Set([...history.filter((h) => h.ok).map((h) => h.cmd.split(' ')[0]),
+    'echo', 'cat', 'pwd', 'clear', 'whoami', 'date', 'wib', 'vim', 'nano', 'code', 'open', 'man', 'top', 'htop',
+    'mkdir', 'rm', 'cp', 'mv', 'touch', 'curl', 'wget', 'node', 'python', 'pip', 'go', 'rustc', 'exit', 'history']);
 
-  const render = (typed, items, sel) => {
-    input.textContent = typed;
-    list.innerHTML = items.map((parts, i) => {
-      const html = parts.map((p, j) => (j % 2 ? '<mark>' + esc(p) + '</mark>' : esc(p))).join('');
-      return '<li' + (i === sel ? ' class="sel"' : '') + '>' + html + '</li>';
-    }).join('');
+  // Where each chunk starts a word, in order. Returns [start, end] marks or null.
+  const words = (cmd) => [...cmd.matchAll(/\S+/g)].map((m) => [m[0].toLowerCase(), m.index]);
+  const wordStarts = (q, ws) => {
+    const marks = [];
+    const go = (rest, from) => {
+      if (!rest) return true;
+      for (let j = from; j < ws.length; j++) {
+        const [w, at] = ws[j];
+        for (let k = Math.min(rest.length, w.length); k > 0; k--) {
+          if (!w.startsWith(rest.slice(0, k))) continue;
+          marks.push([at, at + k]);
+          if (go(rest.slice(k), j + 1)) return true;
+          marks.pop();
+        }
+      }
+      return false;
+    };
+    return go(q, 0) ? marks : null;
   };
-  const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+  const chunkStarts = (chunks, ws) => {
+    const marks = [];
+    let from = 0;
+    for (const c of chunks) {
+      const j = ws.findIndex(([w], i) => i >= from && w.startsWith(c));
+      if (j < 0) return null;
+      marks.push([ws[j][1], ws[j][1] + c.length]);
+      from = j + 1;
+    }
+    return marks;
+  };
+  const how = { prefix: 'Prefix match', words: 'Word starts', chunks: 'Chunks' };
+  const match = (typed) => {
+    const q = typed.toLowerCase().replace(/^\s+/, '');
+    if (!q.trim()) return [];
+    const chunks = q.trim().split(/\s+/);
+    const chunked = chunks.length > 1 || /\s$/.test(q);
+    const found = [];
+    for (const h of history) {
+      let kind = null, marks = null;
+      if (!chunked && h.cmd.toLowerCase().startsWith(q)) { kind = 'prefix'; marks = [[0, q.length]]; }
+      else if (chunked) { marks = chunkStarts(chunks, words(h.cmd)); kind = marks && 'chunks'; }
+      else { marks = wordStarts(q, words(h.cmd)); kind = marks && 'words'; }
+      if (!kind) continue;
+      const score = h.n / (1 + h.days / 7) * (h.here ? 1.25 : 1);
+      found.push({ h, kind, marks, rank: [kind === 'prefix' ? 0 : 1, h.ok ? 0 : 1, -score] });
+    }
+    // Anything that never worked goes after everything that did; then prefix before word starts.
+    found.sort((a, b) => a.rank[1] - b.rank[1] || a.rank[0] - b.rank[0] || a.rank[2] - b.rank[2]);
+    return found.slice(0, 8);
+  };
+  const explain = (typed, results) => {
+    if (!typed.trim()) return engaged ? 'Your turn. Try gi, dcup or gi st, then press ↓ and Enter.' : '';
+    if (!results.length) return `Nothing starts like that in this sample of ${history.length} commands. Press Enter to add it.`;
+    const top = results[0];
+    let line = top.kind === 'prefix' ? `Prefix match: your most used ${esc(top.h.cmd.split(' ')[0])} commands come first.`
+      : top.kind === 'chunks' ? 'Chunks: each one starts a word, in order.'
+      : `Word starts: ${top.marks.map(([a, b]) => esc(top.h.cmd.slice(a, b))).join(' · ')} finds ${esc(top.h.cmd)}.`;
+    if (results.some((r) => !r.h.ok)) line += ' The red line never worked, so it sinks.';
+    return line;
+  };
+  const toHtml = (cmd, marks) => {
+    let html = '', at = 0;
+    for (const [a, b] of marks) { html += esc(cmd.slice(at, a)) + '<mark>' + esc(cmd.slice(a, b)) + '</mark>'; at = b; }
+    return html + esc(cmd.slice(at));
+  };
 
+  let engaged = false, results = [], sel = -1, hidden = false;
+  const draw = (typed) => {
+    results = hidden ? [] : match(typed);
+    if (sel >= results.length) sel = results.length - 1;
+    list.innerHTML = results.map((r, i) =>
+      `<li id="s-${i}" role="option" aria-selected="${i === sel}" data-i="${i}" class="${[i === sel && 'sel', !r.h.ok && 'failed'].filter(Boolean).join(' ')}">${toHtml(r.h.cmd, r.marks)}</li>`).join('');
+    field.setAttribute('aria-expanded', String(results.length > 0));
+    if (sel >= 0) field.setAttribute('aria-activedescendant', 's-' + sel); else field.removeAttribute('aria-activedescendant');
+    caption.innerHTML = explain(typed, results);
+    mood(sel >= 0 ? 'found' : typed.trim() ? 'think' : 'idle');
+  };
+
+  const print = (html, cls = '') => {
+    out.insertAdjacentHTML('beforeend', `<div class="line ${cls}">${html}</div>`);
+    while (out.children.length > 4) out.firstElementChild.remove();
+  };
+  const run = (cmd) => {
+    cmd = cmd.trim();
+    field.value = ''; sel = -1; hidden = false;
+    if (cmd) {
+      print(`<span class="prompt">❯ </span>${esc(cmd)}`);
+      const h = history.find((x) => x.cmd === cmd);
+      const program = cmd.split(/\s+/)[0];
+      const worked = h ? h.ok : known.has(program);
+      if (!h) history.push({ cmd, n: 1, days: 0, here: true, ok: worked });
+      if (!worked) {
+        print(`zsh: command not found: ${esc(program)}`, 'fail');
+        mood('oops'); oopsUntil = Date.now() + 1600;
+        setTimeout(() => draw(field.value), 1650);
+      } else {
+        if (h) { h.n += 1; h.days = 0; h.here = true; }
+        oopsUntil = 0; mood('found');
+      }
+    }
+    draw('');
+    if (cmd) caption.textContent = history.find((x) => x.cmd === cmd).ok
+      ? 'Ran it. It is in your history now, so its first letters bring it back.'
+      : 'That never worked, so wib keeps it but ranks it below the ones that did.';
+  };
+  // Shift+Tab takes one more word (a quoted string counts as one).
+  const nextWords = (cmd, current) => {
+    const parts = [...cmd.matchAll(/"[^"]*"|'[^']*'|\S+/g)];
+    const have = current.trimEnd().length;
+    for (const p of parts) { const end = p.index + p[0].length; if (end > have) return cmd.slice(0, end); }
+    return cmd;
+  };
+
+  const engage = () => {
+    if (engaged) return;
+    engaged = true;
+    shown.hidden = true; cursor.hidden = true; tryBtn.hidden = true;
+    field.hidden = false; field.value = ''; sel = -1;
+    field.focus();
+    draw('');
+  };
+  tryBtn.addEventListener('click', engage);
+  term.addEventListener('click', (e) => {
+    const li = e.target.closest('li[data-i]');
+    if (engaged && li) { run(results[+li.dataset.i].h.cmd); field.focus(); return; }
+    engage();
+    field.focus();
+  });
+  field.addEventListener('input', () => { sel = -1; hidden = false; draw(field.value); });
+  field.addEventListener('keydown', (e) => {
+    if (e.key === 'ArrowDown' && results.length) { e.preventDefault(); sel = Math.min(sel + 1, results.length - 1); draw(field.value); }
+    else if (e.key === 'ArrowUp' && sel >= 0) { e.preventDefault(); sel -= 1; draw(field.value); }
+    else if (e.key === 'Enter') { e.preventDefault(); run(sel >= 0 ? results[sel].h.cmd : field.value); }
+    else if (e.key === 'Tab' && sel >= 0) {
+      e.preventDefault();
+      const cmd = results[sel].h.cmd;
+      field.value = e.shiftKey ? nextWords(cmd, field.value) : cmd;
+      sel = -1; draw(field.value);
+      if (e.shiftKey && field.value !== cmd) { sel = results.findIndex((r) => r.h.cmd === cmd); draw(field.value); }
+    }
+    else if (e.key === 'Escape') { hidden = true; sel = -1; draw(field.value); }
+    else if (e.key === ' ' && sel >= 0) { sel = -1; }
+  });
+
+  // Autoplay: types a few queries with the same matcher, so the demo never lies.
+  const showFrame = (typed, pick) => {
+    shown.textContent = typed;
+    sel = pick ? 0 : -1;
+    draw(typed);
+  };
+  showFrame('gi', false);
+  if (reduce) return;
+
+  // The person at the desk turns their face toward the pointer.
+  const face = document.getElementById('buddy-face');
+  let facePending = false, px = 0, py = 0;
+  if (buddy && face) {
+    addEventListener('pointermove', (e) => {
+      px = e.clientX; py = e.clientY;
+      if (facePending) return;
+      facePending = true;
+      requestAnimationFrame(() => {
+        facePending = false;
+        const r = buddy.getBoundingClientRect();
+        const cx = r.left + r.width * 0.5, cy = r.top + r.height * (150 / 420);
+        const clamp = (v) => Math.max(-1, Math.min(1, v));
+        face.setAttribute('transform', `translate(${(clamp((px - cx) / 300) * 6).toFixed(1)} ${(clamp((py - cy) / 300) * 5).toFixed(1)})`);
+      });
+    }, { passive: true });
+  }
+
+  const scenes = [['g', 'gi'], ['d', 'dc', 'dcu', 'dcup'], ['gi ', 'gi s', 'gi st']];
+  const wait = (ms) => new Promise((r) => setTimeout(r, ms));
   (async function loop() {
     for (;;) {
-      for (const scene of scenes) {
-        caption.textContent = scene.caption;
-        render('', [], -1);
+      for (const steps of scenes) {
+        if (engaged) return;
+        showFrame('', false);
         await wait(500);
-        for (const [typed, items, sel] of scene.steps) {
-          render(typed, items, sel === undefined ? -1 : sel);
-          await wait(sel === undefined ? 380 : 1800);
+        for (const typed of steps) {
+          if (engaged) return;
+          showFrame(typed, false);
+          await wait(380);
         }
+        if (engaged) return;
+        showFrame(steps[steps.length - 1], true);
+        await wait(1800);
       }
     }
   })();
