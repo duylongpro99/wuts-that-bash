@@ -61,6 +61,16 @@ pub fn parse(raw: &[u8]) -> Vec<Entry> {
 /// Like `parse`, but entries older than `cutoff` are skipped before any
 /// allocation, which keeps per-keystroke queries cheap on long histories.
 pub fn parse_since(raw: &[u8], cutoff: i64) -> Vec<Entry> {
+    parse_lines(raw, cutoff).into_iter().map(|(_, e)| e).collect()
+}
+
+/// Every entry with the 1-based line number of its header, for pointing the
+/// user at a line of the file.
+pub fn parse_with_lines(raw: &[u8]) -> Vec<(usize, Entry)> {
+    parse_lines(raw, i64::MIN)
+}
+
+fn parse_lines(raw: &[u8], cutoff: i64) -> Vec<(usize, Entry)> {
     let unmetafied;
     let bytes = if raw.contains(&META) {
         unmetafied = unmetafy(raw);
@@ -69,17 +79,18 @@ pub fn parse_since(raw: &[u8], cutoff: i64) -> Vec<Entry> {
         raw
     };
     let text = String::from_utf8_lossy(bytes);
-    let mut entries: Vec<Entry> = Vec::new();
+    let mut entries: Vec<(usize, Entry)> = Vec::new();
     // True while the previous line ended with a continuation backslash.
     let mut continuing = false;
     // Whether the entry being continued was kept (inside the period).
     let mut keeping = false;
 
-    for line in text.split('\n') {
+    // Cutting at `\n` keeps line numbers: a metafied byte is never `\n`.
+    for (n, line) in text.split('\n').enumerate() {
         if continuing {
             continuing = line.ends_with('\\');
             if keeping {
-                if let Some(last) = entries.last_mut() {
+                if let Some((_, last)) = entries.last_mut() {
                     last.cmd.pop(); // drop the trailing backslash
                     last.cmd.push('\n');
                     last.cmd.push_str(line);
@@ -91,23 +102,26 @@ pub fn parse_since(raw: &[u8], cutoff: i64) -> Vec<Entry> {
             continuing = cmd.ends_with('\\');
             keeping = ts >= cutoff;
             if keeping {
-                entries.push(Entry {
-                    ts,
-                    cmd: cmd.to_string(),
-                    cwd: None,
-                    exit: None,
-                });
+                entries.push((
+                    n + 1,
+                    Entry {
+                        ts,
+                        cmd: cmd.to_string(),
+                        cwd: None,
+                        exit: None,
+                    },
+                ));
             }
         }
     }
 
-    for e in &mut entries {
+    for (_, e) in &mut entries {
         let trimmed = e.cmd.trim_end();
         if trimmed.len() != e.cmd.len() {
             e.cmd.truncate(trimmed.len());
         }
     }
-    entries.retain(|e| !e.cmd.trim().is_empty());
+    entries.retain(|(_, e)| !e.cmd.trim().is_empty());
     entries
 }
 
@@ -186,6 +200,19 @@ mod tests {
         assert_eq!(e.len(), 2);
         assert_eq!(e[0].cmd, "for f in *; do\n  echo $f\ndone");
         assert_eq!(e[1].cmd, "ls");
+    }
+
+    #[test]
+    fn reports_header_line_numbers() {
+        // "é" metafied, and a multi-line command spanning lines 2-3.
+        let raw = [
+            b": 100:0;echo caf\xC3".as_slice(),
+            &[META, 0xA9 ^ 0x20],
+            b"\nplain\n: 101:0;for x; do\\\ndone\n: 102:0;ls\n",
+        ]
+        .concat();
+        let found: Vec<(usize, String)> = parse_with_lines(&raw).into_iter().map(|(n, e)| (n, e.cmd)).collect();
+        assert_eq!(found, [(1, "echo café".to_string()), (3, "for x; do\ndone".to_string()), (5, "ls".to_string())]);
     }
 
     #[test]

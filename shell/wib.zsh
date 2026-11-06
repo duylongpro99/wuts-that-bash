@@ -4,8 +4,8 @@
 # States: typing (list shown, nothing selected), navigating (a row is selected),
 #         hidden (dismissed with Esc / Ctrl-G until the buffer changes).
 #
-# Only ↓, Shift+Tab, Esc and Ctrl-G are bound in the main keymap, and each falls
-# back to its previous widget when the list is not in play. The other list keys
+# Only ↓, Shift+Tab, Esc, Ctrl-G and Ctrl-] are bound in the main keymap, and each
+# falls back to its previous widget when the list is not in play. The other list keys
 # (↑, Tab, Space, Enter) live in the `wib-nav` keymap, which is active only while
 # a row is selected, so Ctrl-R, completion and history keys keep working.
 
@@ -15,6 +15,7 @@
 typeset -g _wib_loaded=1
 
 zmodload zsh/datetime zsh/parameter
+zmodload -F zsh/files b:zf_rm
 autoload -Uz add-zsh-hook add-zle-hook-widget is-at-least
 # zsh 5.9+ can tag highlights so wib removes exactly its own; older zsh falls
 # back to removing highlights that start past the buffer (where wib's list is).
@@ -31,6 +32,42 @@ typeset -g  _wib_goal_buffer='' # buffer right after the last word fill
 typeset -g  _wib_cmd=''         # command captured in preexec, recorded in precmd
 typeset -gi _wib_cmd_ts=0
 typeset -gA _wib_orig=()        # raw key sequence -> main-keymap widget before wib
+typeset -ga _wib_slot_pending=() # (start end buffer) after Ctrl-]: typing replaces the slot
+typeset -g  _wib_fix=''         # corrected command after "command not found", for one prompt
+
+# Run the wib binary with the shell's settings, exported or not, so every
+# subcommand reads the same history file, data directory and period.
+_wib_run() {
+  WIB_ZSH_HISTORY=${WIB_ZSH_HISTORY:-${HISTFILE:-$HOME/.zsh_history}} \
+  WIB_DATA_DIR=${WIB_DATA_DIR-} XDG_DATA_HOME=${XDG_DATA_HOME-} WIB_PERIOD=${WIB_PERIOD-} \
+  WIB_SECRET_GUARD=${WIB_SECRET_GUARD-} \
+    "$_wib_bin" "$@"
+}
+
+# Same rule as the binary: $WIB_DATA_DIR, else $XDG_DATA_HOME/wib, else ~/.local/share/wib.
+_wib_data_dir() {
+  REPLY=${WIB_DATA_DIR:-${XDG_DATA_HOME:+$XDG_DATA_HOME/wib}}
+  REPLY=${REPLY:-$HOME/.local/share/wib}
+}
+
+# `wib record` leaves secret-notice.<pid> when this shell's last command looked
+# like it held a secret and was not saved. Show it once.
+_wib_secret_notice() {
+  local REPLY label
+  _wib_data_dir
+  local file=$REPLY/secret-notice.$$
+  [[ -f $file ]] || return 0
+  label=$(<$file)
+  zf_rm -f -- $file
+  zle -M "wib: the last command looks like it contains a ${label:-secret}; wib did not save it. It is still in your zsh history: run 'wib audit'."
+}
+
+_wib_zshexit() {
+  local REPLY
+  _wib_data_dir
+  zf_rm -f -- $REPLY/secret-notice.$$ 2>/dev/null
+  return 0
+}
 
 # ---------------------------------------------------------------- rendering
 
@@ -59,14 +96,16 @@ _wib_render() {
   _wib_clear_display
   [[ $_wib_state == hidden ]] && return
   (( ${#_wib_items} )) || return
-  local item line text=''
+  local item line text='' note=''
   local -a hl=()
+  [[ -n $_wib_fix && -z $BUFFER ]] && note='  ← did you mean?'
   integer i=0 start offset=$(( ${#BUFFER} + ${#POSTDISPLAY} ))
-  integer width=$(( COLUMNS > 8 ? COLUMNS - 4 : 4 ))
+  integer width=$(( COLUMNS - 4 - ${#note} > 4 ? COLUMNS - 4 - ${#note} : 4 ))
   for item in "${_wib_items[@]}"; do
     (( i++ ))
     line=${item//$'\n'/ ⏎ }
     (( ${#line} > width )) && line="${line[1,width-1]}…"
+    line+=$note
     if (( i == _wib_sel )); then line="› $line"; else line="  $line"; fi
     start=$(( offset + ${#text} + 1 ))
     hl+=( "$start $(( start + ${#line} )) $( (( i == _wib_sel )) && print standout || print fg=244 )$_wib_memo" )
@@ -78,15 +117,17 @@ _wib_render() {
 }
 
 # `wib <keywords>` on the line: REPLY = the keywords (wib itself is not one).
-# `wib forget|query|record|init ...` runs a subcommand, so it is a plain line.
+# `wib audit|doctor|forget|unforget|query|record|slots|suggest-fix|init ...` runs a subcommand, so it is a plain line.
 _wib_keywords() {
   setopt localoptions extended_glob
   [[ $BUFFER == wib[[:blank:]]* ]] || return 1
   REPLY=${BUFFER#wib[[:blank:]]##}
-  [[ $REPLY != (forget|query|record|init)(|[[:blank:]]*) ]]
+  [[ $REPLY != (audit|doctor|forget|unforget|query|record|slots|suggest-fix|init)(|[[:blank:]]*) ]]
 }
 
 _wib_should_fetch() {
+  # A correction after "command not found" shows on the empty line.
+  [[ -z $BUFFER && -n $_wib_fix ]] && return 0
   local typed=$BUFFER REPLY
   _wib_keywords && typed=$REPLY
   (( ${#typed} >= ${WIB_MIN_CHARS:-2} && CURSOR == ${#BUFFER} )) || return 1
@@ -99,13 +140,18 @@ _wib_should_fetch() {
 
 _wib_fetch() {
   _wib_items=()
+  if [[ -z $BUFFER && -n $_wib_fix ]]; then
+    _wib_items=( "$_wib_fix" )
+    return
+  fi
   _wib_should_fetch || return
-  local out REPLY
-  local -a mode=( -- "$BUFFER" )
-  _wib_keywords && mode=( --keywords -- "$REPLY" )
-  out=$(WIB_ZSH_HISTORY=${WIB_ZSH_HISTORY:-${HISTFILE:-$HOME/.zsh_history}} \
-        "$_wib_bin" query -0 --cwd "$PWD" --period "${WIB_PERIOD:-30d}" --limit "${WIB_LIMIT:-8}" \
-        "${mode[@]}" 2>/dev/null) || return
+  local out REPLY input=$BUFFER
+  local -a mode=()
+  _wib_keywords && mode=( --keywords ) input=$REPLY
+  # The input goes through the environment, which other users cannot read in
+  # `ps`, and costs no extra process per keystroke.
+  out=$(WIB_INPUT=$input _wib_run query -0 --input-env --cwd "$PWD" --period "${WIB_PERIOD:-30d}" \
+        --limit "${WIB_LIMIT:-8}" "${mode[@]}" 2>/dev/null) || return
   _wib_items=( "${(@0)out}" )
   _wib_items=( "${(@)_wib_items:#}" )
 }
@@ -114,11 +160,28 @@ _wib_leave_nav() {
   [[ $KEYMAP == wib-nav ]] && zle -K main
 }
 
+# After Ctrl-] selected a slot, text typed at its end replaces the whole slot.
+# Any other change (moving, deleting, pasting over the region) just ends it.
+_wib_slot_typed() {
+  (( ${#_wib_slot_pending} )) || return 0
+  local old=${_wib_slot_pending[3]}
+  integer s=${_wib_slot_pending[1]} e=${_wib_slot_pending[2]} added=$(( ${#BUFFER} - ${#old} ))
+  [[ $BUFFER == "$old" ]] && (( CURSOR == e )) && return 0
+  _wib_slot_pending=()
+  REGION_ACTIVE=0
+  if (( added > 0 && CURSOR == e + added )) && [[ ${BUFFER[1,e]} == "${old[1,e]}" && ${BUFFER[e+added+1,-1]} == "${old[e+1,-1]}" ]]; then
+    BUFFER=${old[1,s]}${BUFFER[e+1,e+added]}${old[e+1,-1]}
+    CURSOR=$(( s + added ))
+  fi
+}
+
 # Runs before every redraw: refetch only when the buffer actually changed.
 _wib_pre_redraw() {
   setopt localoptions no_ksh_arrays no_sh_word_split
+  _wib_slot_typed
   if [[ $BUFFER != "$_wib_last_buffer" ]]; then
     _wib_last_buffer=$BUFFER
+    [[ -n $BUFFER ]] && _wib_fix=''   # typing anything drops the correction
     _wib_state=typing
     _wib_sel=0
     _wib_leave_nav
@@ -126,6 +189,7 @@ _wib_pre_redraw() {
   fi
   [[ $_wib_state == navigating ]] || _wib_leave_nav
   _wib_render
+  _wib_secret_notice
 }
 
 _wib_line_init() {
@@ -136,11 +200,16 @@ _wib_line_init() {
   _wib_goal_buffer=''
   _wib_last_buffer=$'\0'
   _wib_tail=''
+  _wib_slot_pending=()
   _wib_leave_nav
   _wib_wrap_autosuggest
+  # The prompt is drawn before line-init, so show a correction now, not on the first key.
+  [[ -n $_wib_fix ]] && _wib_pre_redraw
+  _wib_secret_notice
 }
 
 _wib_line_finish() {
+  _wib_fix=''
   _wib_clear_display
   _wib_leave_nav
   zle -R
@@ -204,6 +273,7 @@ _wib_make_nav_keymap() {
   bindkey -M wib-nav '^[[A' _wib_nav_up      '^[OA' _wib_nav_up
   bindkey -M wib-nav '^I'   _wib_nav_tab
   bindkey -M wib-nav '^[[Z' _wib_word
+  bindkey -M wib-nav '^]'   _wib_nav_slot
   bindkey -M wib-nav ' '    _wib_nav_space
   bindkey -M wib-nav '^M'   _wib_nav_enter   '^J' _wib_nav_enter
   bindkey -M wib-nav '^['   _wib_nav_dismiss '^G' _wib_nav_dismiss
@@ -259,8 +329,17 @@ _wib_nav_space() {
   _wib_render
 }
 
+# Esc / Ctrl-G also drop a slot selection, so vi command mode does not start
+# in visual mode on it.
+_wib_drop_slot() {
+  (( ${#_wib_slot_pending} )) || return 0
+  _wib_slot_pending=()
+  REGION_ACTIVE=0
+}
+
 _wib_nav_dismiss() {
   _wib_nav_active || return 0
+  _wib_drop_slot
   _wib_to_typing
   _wib_state=hidden
   _wib_render
@@ -270,6 +349,7 @@ _wib_nav_dismiss() {
 # Esc / Ctrl-G in main: hide a visible list. In vi insert mode Esc also
 # switches to command mode as usual; with no list, the old widget runs.
 _wib_dismiss() {
+  _wib_drop_slot
   if _wib_list_visible; then
     _wib_state=hidden
     _wib_render
@@ -277,6 +357,45 @@ _wib_dismiss() {
   else
     _wib_call_orig
   fi
+}
+
+# Ctrl-]: select the next part of the line that earlier runs of the same
+# command changed (start at or after the cursor, else the first). Each press
+# asks again from the current line, so nothing goes stale.
+_wib_slot() {
+  setopt localoptions no_ksh_arrays no_sh_word_split
+  local out s pick=''
+  local -a slots=()
+  if [[ $BUFFER != *$'\n'* && -n ${BUFFER//[[:space:]]/} ]]; then
+    out=$(print -rn -- "$BUFFER" | _wib_run slots --stdin --period "${WIB_PERIOD:-30d}" 2>/dev/null)
+    slots=( ${(f)out} )
+  fi
+  if (( ! ${#slots} )); then
+    zle -M "wib: no earlier runs to compare"
+    # In vi insert mode the old widget is self-insert: it would insert ^].
+    local w=${_wib_orig[$KEYS]-}
+    [[ -n $w && $w != (self-insert|undefined-key) ]] && zle "$w"
+    return 0
+  fi
+  for s in "${slots[@]}"; do
+    (( ${s%% *} >= CURSOR )) && { pick=$s; break }
+  done
+  pick=${pick:-${slots[1]}}
+  MARK=${pick%% *}
+  CURSOR=${pick##* }
+  REGION_ACTIVE=1
+  _wib_slot_pending=( $MARK $CURSOR "$BUFFER" )
+}
+
+# Ctrl-] on a selected row: fill it (like Tab), then jump to its first slot.
+_wib_nav_slot() {
+  setopt localoptions no_ksh_arrays
+  _wib_nav_active || return 0
+  local cmd=${_wib_items[_wib_sel]}
+  _wib_to_typing
+  _wib_fill "$cmd"
+  CURSOR=0
+  _wib_slot
 }
 
 # Offset in $1 where the first shell word ending after offset $2 ends.
@@ -334,11 +453,49 @@ _wib_preexec() {
 
 _wib_precmd() {
   local st=$?
+  _wib_fix=''
   [[ -n $_wib_cmd ]] || return 0
-  "$_wib_bin" record --ts $_wib_cmd_ts --exit $st --cwd "$PWD" --period "${WIB_PERIOD:-30d}" \
-    -- "$_wib_cmd" &>/dev/null &!
+  # The command goes through stdin so a secret in it never shows in `ps`.
+  print -rn -- "$_wib_cmd" | _wib_run record --stdin --notice-id $$ --ts $_wib_cmd_ts --exit $st \
+    --cwd "$PWD" --period "${WIB_PERIOD:-30d}" &>/dev/null &!
+  # "command not found": offer the command with its program name corrected.
+  # Any other failure costs nothing.
+  if (( st == 127 )); then
+    _wib_fix=$(print -rn -- "$_wib_cmd" | _wib_run suggest-fix --stdin --cwd "$PWD" \
+      --period "${WIB_PERIOD:-30d}" 2>/dev/null)
+  fi
   _wib_cmd=''
   return 0
+}
+
+# ---------------------------------------------------------------- doctor
+
+# What `wib doctor` cannot see from outside the shell, as key=value lines.
+_wib_doctor_state() {
+  local k
+  print -r -- "zsh_version=$ZSH_VERSION"
+  print -r -- "ZDOTDIR=${ZDOTDIR-}"
+  print -r -- "HISTFILE=${HISTFILE-}"
+  print -r -- "KEYTIMEOUT=${KEYTIMEOUT-}"
+  for k in extended_history share_history inc_append_history; do
+    print -r -- "$k=${options[$k]-}"
+  done
+  for k in '^[[B' '^[OB' '^[[Z' '^[' '^G' '^]'; do
+    print -r -- "bind:$k=${${"$(bindkey -M main -- "$k")"}##* }"
+  done
+  for k in WIB_PERIOD WIB_LIMIT WIB_MIN_CHARS WIB_ZSH_HISTORY WIB_DATA_DIR WIB_SECRET_GUARD; do
+    print -r -- "$k=${(P)k-}"
+  done
+}
+
+# `wib doctor` also checks the shell it runs in; everything else is the binary
+# this shell loaded (`command wib` runs whichever is on $PATH).
+wib() {
+  if [[ $1 == doctor ]]; then
+    _WIB_DOCTOR_STATE="$(_wib_doctor_state)" _wib_run "$@"
+  else
+    "$_wib_bin" "$@"
+  fi
 }
 
 # ---------------------------------------------------------------- wiring
@@ -355,7 +512,7 @@ _wib_bind_main() {
 
 () {
   local w
-  for w in _wib_down _wib_word _wib_dismiss \
+  for w in _wib_down _wib_word _wib_dismiss _wib_slot _wib_nav_slot \
            _wib_nav_down _wib_nav_up _wib_nav_tab _wib_nav_enter _wib_nav_space _wib_nav_dismiss; do
     zle -N $w
   done
@@ -363,6 +520,7 @@ _wib_bind_main() {
   _wib_bind_main _wib_down    '^[[B' '^[OB'
   _wib_bind_main _wib_word    '^[[Z'
   _wib_bind_main _wib_dismiss '^[' '^G'
+  _wib_bind_main _wib_slot    '^]'
 
   _wib_make_nav_keymap
 
@@ -370,6 +528,7 @@ _wib_bind_main() {
   add-zle-hook-widget line-init _wib_line_init
   add-zle-hook-widget line-finish _wib_line_finish
   add-zsh-hook preexec _wib_preexec
+  add-zsh-hook zshexit _wib_zshexit
   # Run first so $? is still the exit status of the user's command.
   precmd_functions=( _wib_precmd ${precmd_functions:#_wib_precmd} )
 }

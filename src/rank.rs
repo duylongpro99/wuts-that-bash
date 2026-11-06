@@ -13,6 +13,8 @@ pub struct RankContext<'a> {
     pub scope: Option<&'a str>,
     /// Commands removed with `wib forget`, compared after trimming.
     pub forgotten: Option<&'a HashSet<String>>,
+    /// Never suggest a command that looks like it holds a secret.
+    pub secret_guard: bool,
 }
 
 impl RankContext<'_> {
@@ -22,21 +24,33 @@ impl RankContext<'_> {
         Self::default()
     }
 
-    fn is_forgotten(&self, cmd: &str) -> bool {
+    pub(crate) fn is_forgotten(&self, cmd: &str) -> bool {
         self.forgotten.is_some_and(|f| f.contains(cmd))
+    }
+
+    fn has_secret(&self, cmd: &str) -> bool {
+        self.secret_guard && crate::secret::detect(cmd).is_some()
+    }
+
+    /// Never shown: forgotten, or holding a secret. `cmd` is trimmed.
+    pub(crate) fn hides(&self, cmd: &str) -> bool {
+        self.is_forgotten(cmd) || self.has_secret(cmd)
     }
 }
 
-struct Candidate<'a> {
-    cmd: &'a str,
-    count: u32,
-    last_ts: i64,
+/// What the entries say about one distinct (trimmed) command.
+pub(crate) struct Candidate<'a> {
+    pub cmd: &'a str,
+    pub count: u32,
+    /// Runs with no exit code: those read from `.zsh_history` only.
+    pub unknown_exit: u32,
+    pub last_ts: i64,
     /// Run at least once inside the asking shell's project.
-    local: bool,
+    pub local: bool,
     /// At least one run has a known exit code.
-    known_exit: bool,
+    pub known_exit: bool,
     /// At least one run ended in success (or was stopped by the user).
-    succeeded: bool,
+    pub succeeded: bool,
 }
 
 impl Candidate<'_> {
@@ -44,11 +58,15 @@ impl Candidate<'_> {
     fn failed(&self) -> bool {
         self.known_exit && !self.succeeded
     }
+
+    pub(crate) fn frecency(&self, now: i64) -> f64 {
+        self.count as f64 * recency_weight(now - self.last_ts)
+    }
 }
 
 /// Exit codes that do not mean the command is wrong: success, Ctrl-C (130),
 /// SIGPIPE (141), SIGTERM (143) and Ctrl-Z (148).
-fn is_ok(code: i32) -> bool {
+pub(crate) fn is_ok(code: i32) -> bool {
     matches!(code, 0 | 130 | 141 | 143 | 148)
 }
 
@@ -92,30 +110,24 @@ pub fn rank_keywords<'a>(
 }
 
 /// The arguments of a `wib` call, or `None` if `cmd` does not run wib.
-fn wib_args(cmd: &str) -> Option<&str> {
+pub(crate) fn wib_args(cmd: &str) -> Option<&str> {
     cmd.strip_prefix("wib")
         .filter(|rest| rest.is_empty() || rest.starts_with(char::is_whitespace))
         .map(str::trim_start)
 }
 
+/// `wib forget …` / `wib unforget …`: never suggested, they hold the very
+/// command that was meant to disappear (or to come back once).
 fn is_wib_forget(cmd: &str) -> bool {
-    wib_args(cmd)
-        .and_then(|args| args.strip_prefix("forget"))
-        .is_some_and(|rest| rest.is_empty() || rest.starts_with(char::is_whitespace))
+    wib_args(cmd).is_some_and(|args| {
+        ["forget", "unforget"].iter().any(|sub| {
+            args.strip_prefix(sub).is_some_and(|rest| rest.is_empty() || rest.starts_with(char::is_whitespace))
+        })
+    })
 }
 
-fn rank_by<'a>(
-    entries: &'a [Entry],
-    now: i64,
-    limit: usize,
-    ctx: RankContext,
-    keep: impl Fn(&str) -> bool,
-    matcher: impl Fn(&str) -> Option<Match>,
-) -> Vec<&'a str> {
-    if limit == 0 {
-        return Vec::new();
-    }
-
+/// One candidate per distinct trimmed command, in order of first appearance.
+pub(crate) fn stats<'a>(entries: &'a [Entry], ctx: RankContext) -> Vec<Candidate<'a>> {
     let mut index: HashMap<&str, usize> = HashMap::with_capacity(entries.len());
     let mut candidates: Vec<Candidate> = Vec::new();
     for e in entries {
@@ -124,6 +136,7 @@ fn rank_by<'a>(
             candidates.push(Candidate {
                 cmd,
                 count: 0,
+                unknown_exit: 0,
                 last_ts: e.ts,
                 local: false,
                 known_exit: false,
@@ -137,19 +150,35 @@ fn rank_by<'a>(
         if let (Some(scope), Some(dir)) = (ctx.scope, e.cwd.as_deref()) {
             c.local |= in_scope(dir, scope);
         }
-        if let Some(code) = e.exit {
-            c.known_exit = true;
-            c.succeeded |= is_ok(code);
+        match e.exit {
+            Some(code) => {
+                c.known_exit = true;
+                c.succeeded |= is_ok(code);
+            }
+            None => c.unknown_exit += 1,
         }
     }
+    candidates
+}
 
+fn rank_by<'a>(
+    entries: &'a [Entry],
+    now: i64,
+    limit: usize,
+    ctx: RankContext,
+    keep: impl Fn(&str) -> bool,
+    matcher: impl Fn(&str) -> Option<Match>,
+) -> Vec<&'a str> {
+    if limit == 0 {
+        return Vec::new();
+    }
+    let candidates = stats(entries, ctx);
     let mut scored: Vec<(Match, f64, &Candidate)> = candidates
         .iter()
         .filter(|c| keep(c.cmd) && !ctx.is_forgotten(c.cmd))
         .filter_map(|c| {
             let m = matcher(c.cmd)?;
-            let frecency = c.count as f64 * recency_weight(now - c.last_ts);
-            Some((m, frecency, c))
+            Some((m, c.frecency(now), c))
         })
         .collect();
 
@@ -162,7 +191,14 @@ fn rank_by<'a>(
             .then(fb.total_cmp(fa))
             .then(cb.last_ts.cmp(&ca.last_ts))
     });
-    scored.into_iter().take(limit).map(|(_, _, c)| c.cmd).collect()
+    // Scanning for secrets costs more than sorting, so only the commands about
+    // to be shown are scanned.
+    scored
+        .into_iter()
+        .map(|(_, _, c)| c.cmd)
+        .filter(|cmd| !ctx.has_secret(cmd))
+        .take(limit)
+        .collect()
 }
 
 #[cfg(test)]
@@ -237,7 +273,7 @@ mod tests {
     }
 
     fn scoped(scope: &str) -> RankContext<'_> {
-        RankContext { scope: Some(scope), forgotten: None }
+        RankContext { scope: Some(scope), ..RankContext::none() }
     }
 
     #[test]
@@ -302,12 +338,26 @@ mod tests {
             e(40, "wib forget git push --force"),
             e(50, "wib forget"),
             e(60, "wib forgetful"),
+            e(70, "wib unforget git push --force"),
         ];
         let forgotten: HashSet<String> = ["git push --force".to_string()].into();
-        let ctx = RankContext { scope: None, forgotten: Some(&forgotten) };
+        let ctx = RankContext { forgotten: Some(&forgotten), ..RankContext::none() };
         assert_eq!(rank(&entries, "git", NOW, 8, ctx), ["git push origin"]);
         assert_eq!(rank_keywords(&entries, "push", NOW, 8, ctx), ["git push origin"]);
         assert_eq!(rank(&entries, "wib", NOW, 8, ctx), ["wib forgetful"]);
         assert_eq!(rank(&entries, "push", NOW, 8, RankContext::none()), ["git push --force", "git push origin"]);
+    }
+
+    #[test]
+    fn secrets_are_never_suggested_and_do_not_shrink_the_list() {
+        let mut entries: Vec<Entry> = (0..5).map(|i| e(100 + i, &format!("curl -s host/{i}"))).collect();
+        for _ in 0..10 {
+            entries.push(e(10, "curl -H 'Authorization: Bearer abcdefghij' host"));
+        }
+        let guarded = RankContext { secret_guard: true, ..RankContext::none() };
+        let shown = rank(&entries, "curl", NOW, 3, guarded);
+        assert_eq!(shown, ["curl -s host/0", "curl -s host/1", "curl -s host/2"]);
+        assert_eq!(rank(&entries, "curl", NOW, 1, RankContext::none()), ["curl -H 'Authorization: Bearer abcdefghij' host"]);
+        assert!(rank_keywords(&entries, "bearer", NOW, 8, guarded).is_empty());
     }
 }

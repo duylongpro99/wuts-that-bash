@@ -151,6 +151,7 @@ The list has two modes: **typing** (list visible, no line selected) and **select
 | Space | Type a space | Back to typing, no space added, list stays visible |
 | Enter | Run what you typed | Fill in the selected command and run it |
 | Esc / Ctrl-G | Hide the list until you type again | Same as left |
+| Ctrl-] | Jump to the next part that changed between earlier runs (see [Templates](#templates-ctrl-)) | Fill the selected line, then jump to its first such part |
 
 **Word-by-word fill:** type `gi`, select `git push origin master`, and press Shift+Tab four times
 to get `git` → `git push` → `git push origin` → `git push origin master`. A quoted string like
@@ -167,7 +168,48 @@ completion and history are unaffected.
 Set `KEYTIMEOUT=1` for an instant Esc. The trade-off is that pressing Esc then a key (as a substitute for
 Option/Meta) stops working. Ctrl-G always hides the list immediately.
 
-**vi mode** (`bindkey -v`): Esc hides the list and switches to command mode as usual.
+**vi mode** (`bindkey -v`): Esc hides the list and switches to command mode as usual. Ctrl-] works in
+insert mode; on a line with nothing to jump to it inserts nothing.
+
+## Templates (Ctrl-])
+
+Use an old command as a template. Ctrl-] selects the next part of the line that earlier runs of the same
+command changed, such as a port, an image tag or a pod name:
+
+```text
+PROMPT> docker run -p 8080:80 nginx:1.25     (you also ran: docker run -p 9090:80 nginx:1.24)
+        Ctrl-]  → 8080:80 is selected; type 7070:80 and it replaces the whole part
+        Ctrl-]  → nginx:1.25 is selected
+```
+
+- An earlier run counts when it has as many words, the same program, and at least half of its words equal
+  to the line. Only the words that differ become stops. When every value shares the text before `=`
+  (`--tag=1.2`, `--tag=1.3`), only the part after `=` is selected.
+- With no earlier run of that shape, wib says `no earlier runs to compare` and changes nothing; it never
+  guesses from how a word looks.
+- Typing right after Ctrl-] replaces the selected part; moving the cursor or deleting keeps the line as is.
+  Past the last part, Ctrl-] goes back to the first.
+- If your terminal or tmux takes Ctrl-] (telnet does), bind another key: `bindkey '^X^T' _wib_slot`.
+
+## Did you mean
+
+After a command fails with "command not found" (exit code 127), the next prompt lists the same command
+with the program name corrected, marked `← did you mean?`. ↓ Enter runs it, Tab fills it, and typing
+anything makes it disappear.
+
+```text
+PROMPT> gti push origin feat-x
+zsh: command not found: gti
+PROMPT>
+› git push origin feat-x  ← did you mean?
+```
+
+- Only the program name (the first word) is corrected; the arguments are kept byte for byte, so a
+  correction never changes what a command acts on. It is never run for you.
+- A program counts when it succeeded before in wib's log, or appears at least three times in
+  `~/.zsh_history` within `WIB_PERIOD`. Versions are not typos: `python2` is never corrected to `python3`.
+- Nothing runs after other failures (`git psuh` exits 1, and git prints its own hint), so a failing
+  command never slows the prompt.
 
 ## Keyword search
 
@@ -204,10 +246,46 @@ wib forget 'git push --force'
 - Forgotten commands disappear from the live list, `wib query` and `wib <keywords>`. The `wib forget ...`
   line itself is never suggested either.
 - They are stored one per line in `~/.local/share/wib/forget` (under `WIB_DATA_DIR`), readable only by you.
-  There is no `unforget`: to bring a command back, delete its line from that file.
+- `wib unforget` lists forgotten commands (with secrets masked), and `wib unforget '<command>'` brings one
+  back (exact match, like `wib forget`; exit code 1 if it wasn't forgotten).
 - `wib forget` doesn't touch `~/.zsh_history` or wib's log, and the `wib forget ...` line is itself saved
   to `~/.zsh_history`. For a secret, start the line with a space (` wib forget '...'`) so that, with
   `setopt HIST_IGNORE_SPACE`, it isn't saved; then remove the original line from `~/.zsh_history` by hand.
+
+## Secrets
+
+wib keeps commands that look like they hold a secret out of its log and out of every suggestion: tokens with a
+known prefix (`ghp_…`, `glpat-…`, `xoxb-…`, `sk_live_…`, `AKIA…`, `AIza…`), JWTs and private keys, variables
+like `GITHUB_TOKEN=…` or `DB_PASSWORD=…`, password flags (`--password x`, `mysql -px`, `sshpass -p x`,
+`docker login -p x`), `curl -u user:pass`, `user:pass@` in URLs, and `Authorization:` / `X-Api-Key:` headers.
+Values that are a variable (`$TOKEN`, `"$(op read …)"`), a path, `true`/`false` or a short number are not
+secrets.
+
+- When you run such a command, wib doesn't save it and the same shell tells you at the next prompt:
+  `wib: the last command looks like it contains a secret header; wib did not save it. It is still in your
+  zsh history: run 'wib audit'.`
+- Commands are passed to wib on stdin or in the environment, never as arguments, so they don't show in `ps`.
+- A command with a secret that is only in `~/.zsh_history` is never suggested either.
+- `wib audit` lists every command that looks like it holds a secret in `~/.zsh_history`, wib's log and the
+  forget file, with file and line number. Values are masked (only a public prefix like `ghp_` is shown), and
+  the exit code is 1 when anything is found. `wib audit --fix` removes those lines from wib's own files; it
+  never edits `~/.zsh_history`, which zsh owns, and tells you which lines to delete there by hand.
+- Set `WIB_SECRET_GUARD=0` to save and suggest these commands anyway (`wib audit` still finds them).
+
+This is a safety net, not a guarantee: it recognizes common shapes of secrets and may miss others. Starting a
+command with a space, `HISTORY_IGNORE` and `wib forget` remain the ways to keep a command out for sure.
+
+## Doctor
+
+`wib doctor` checks the installation and prints `ok`, `info`, `warn` or `fail` for each item, with a `fix:`
+line when something is wrong (exit code 1 on any `fail`): zsh version (5.3+), `EXTENDED_HISTORY`, whether
+↓, Shift+Tab, Esc, Ctrl-G and Ctrl-] still reach wib, whether `.zshrc` loads wib after plugins like oh-my-zsh,
+zinit, antidote, zsh-autosuggestions or zsh-syntax-highlighting, the data directory's owner and permissions,
+`WIB_PERIOD` / `WIB_LIMIT` / `WIB_MIN_CHARS`, `KEYTIMEOUT`, lookup speed, and secrets in recent history.
+
+Run it in a shell where wib is loaded: there `wib` is a small shell function that also hands the shell's
+own settings (options, key bindings, unexported variables) to `wib doctor`. It runs the binary this shell
+loaded; `command wib` runs whichever `wib` is on `$PATH`.
 
 ## Configuration
 
@@ -220,6 +298,7 @@ Set environment variables in `~/.zshrc`:
 | `WIB_MIN_CHARS` | `2` | Minimum characters before the list appears |
 | `WIB_ZSH_HISTORY` | `$HISTFILE` | zsh history file |
 | `WIB_DATA_DIR` | `~/.local/share/wib` | Where wib keeps its own log and the forget list |
+| `WIB_SECRET_GUARD` | on | `0` saves and suggests commands that look like they hold secrets |
 
 ## Where your data lives
 
@@ -230,8 +309,8 @@ Set environment variables in `~/.zshrc`:
   Increasing `WIB_PERIOD` later therefore can't bring back commands already dropped from this log; older
   commands remain only in `~/.zsh_history` if `SAVEHIST` is large enough, and without directory or exit code.
 - wib never modifies `~/.zsh_history`.
-- Commands starting with a space and commands matching `HISTORY_IGNORE` are not recorded. The log file is
-  readable only by its owner (mode 0600).
+- Commands starting with a space, commands matching `HISTORY_IGNORE` and commands that look like they hold
+  a secret (see [Secrets](#secrets)) are not recorded. The log file is readable only by its owner (mode 0600).
 - wib only writes into a data directory you own that group and others can't write to, and never writes
   through a symlinked log file. Point `WIB_DATA_DIR` at a private directory, not a shared one like `/tmp`.
 - **Limitation:** commands rejected by a custom `zshaddhistory` function are still recorded by wib, because
@@ -278,6 +357,11 @@ if you type tens of thousands of commands within one period; in that case, lower
 Keyword mode (`bench.sh … keywords`) has a p95 comparable to normal mode: 7–10 ms on the
 100,000-command, 400-day file.
 
+The lookups that run only on demand stay under 15 ms at p95 on the heaviest file above (500,000 commands
+over 400 days): the "did you mean" correction after exit 127 (`bench.sh … suggest-fix`, 12.9 ms) and
+Ctrl-] slots (`bench.sh … slots`, 12.2 ms). Checking suggestions for secrets adds no measurable time,
+because only the few lines about to be shown are checked.
+
 Project ranking (`--cwd`, which `bench.sh` passes like the widget does; `WIB_BENCH_CWD=0` leaves it out)
 costs no measurable time: on the 100,000-command, 400-day file, two interleaved runs gave a p95 of
 8.1 and 7.6 ms with it versus 7.8 and 8.3 ms without. Finding the project checks for `.git` in each
@@ -299,13 +383,22 @@ parent folder, so on a slow network filesystem that check can add a few millisec
 - Pressing Ctrl-C while the list is visible leaves the list in the scrollback (like zsh's completion list).
 - Right after recalling a command with ↑/↓ or Ctrl-R, the list stays hidden so ↓ keeps browsing history;
   type another character and the list reappears.
+- Secret detection is a safety net, not a guarantee (see [Secrets](#secrets)).
+- In a shell where wib is loaded, `wib` is a shell function that runs the binary that shell loaded, not
+  necessarily the one on `$PATH`; use `command wib` for the latter.
 
 ## Command-line usage
 
 ```sh
 wib pull,master                   # keyword search, any order
-wib -- forget                     # search for text that collides with a subcommand (forget, init, query, record)
+wib -- forget                     # search for text that collides with a subcommand (audit, doctor, forget,
+                                  # init, query, record, slots, suggest-fix, unforget)
 wib forget 'git push --force'     # never suggest this command again
+wib unforget                      # list forgotten commands (secrets masked)
+wib unforget 'git push --force'   # suggest it again
+wib audit                         # find secrets in your history (masked); exit 1 if any
+wib audit --fix                   # remove them from wib's own files (never from ~/.zsh_history)
+wib doctor                        # check the installation and say how to fix it
 wib query --period 7d -- dcup     # print matching commands, one per line
 wib query --cwd "$PWD" -- make    # prefer commands run in this directory's project
 wib query --keywords -- pull,master

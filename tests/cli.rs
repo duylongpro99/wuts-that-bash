@@ -372,3 +372,318 @@ fn forget_needs_a_command_and_double_dash_searches_the_word() {
     assert!(!sb.data().join("data/forget").exists());
     assert_eq!(wib_env(&sb, &["--", "forget"], &[]), (vec!["echo forget me".to_string()], 0));
 }
+
+/// Run wib with `input` on stdin.
+fn wib_stdin(sb: &Sandbox, args: &[&str], input: &str, env: &[(&str, &str)]) -> (String, i32) {
+    use std::io::Write;
+    use std::process::Stdio;
+    let mut child = Command::new(env!("CARGO_BIN_EXE_wib"))
+        .args(args)
+        .env("WIB_ZSH_HISTORY", sb.dir.join("zsh_history"))
+        .env("WIB_DATA_DIR", sb.dir.join("data"))
+        .env_remove("WIB_SECRET_GUARD")
+        .envs(env.iter().copied())
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .spawn()
+        .unwrap();
+    child.stdin.take().unwrap().write_all(input.as_bytes()).unwrap();
+    let out = child.wait_with_output().unwrap();
+    (String::from_utf8(out.stdout).unwrap(), out.status.code().unwrap_or(-1))
+}
+
+const BEARER: &str = "curl -s -H 'Authorization: Bearer Zm9vYmFyYmF6cXV4cXV1eDEyMzQ1Njc4OTA' localhost:1";
+
+fn record_stdin(sb: &Sandbox, cmd: &str, env: &[(&str, &str)]) -> i32 {
+    let ts = now().to_string();
+    let args = ["record", "--stdin", "--notice-id", "4242", "--ts", &ts, "--exit", "0", "--cwd", "/"];
+    wib_stdin(sb, &args, cmd, env).1
+}
+
+#[test]
+fn secrets_are_not_recorded_and_the_shell_is_told() {
+    let sb = Sandbox::new("secret-record", &[]);
+    assert_eq!(record_stdin(&sb, BEARER, &[]), 0);
+    assert!(log_lines(&sb).is_empty());
+    let notice = sb.data().join("data/secret-notice.4242");
+    assert_eq!(fs::read_to_string(&notice).unwrap(), "secret header");
+    assert_eq!(fs::metadata(&notice).unwrap().permissions().mode() & 0o777, 0o600);
+
+    // A plain command is still recorded, from stdin, verbatim.
+    assert_eq!(record_stdin(&sb, "echo plain\nnext", &[]), 0);
+    assert_eq!(log_lines(&sb).len(), 1);
+    assert_eq!(sb.query("30d", "echo"), ["echo plain\\nnext"]);
+}
+
+#[test]
+fn secret_guard_can_be_turned_off() {
+    let sb = Sandbox::new("secret-off", &[]);
+    assert_eq!(record_stdin(&sb, BEARER, &[("WIB_SECRET_GUARD", "0")]), 0);
+    assert_eq!(log_lines(&sb).len(), 1);
+    assert!(!sb.data().join("data/secret-notice.4242").exists());
+    let (out, _) = wib_stdin(&sb, &["query", "--", "curl"], "", &[("WIB_SECRET_GUARD", "0")]);
+    assert_eq!(out.lines().count(), 1);
+}
+
+#[test]
+fn secrets_in_zsh_history_are_never_suggested() {
+    let n = now();
+    let sb = Sandbox::new("secret-query", &[(n - 60, BEARER), (n - 50, "curl -s localhost:2")]);
+    assert_eq!(sb.query("30d", "cur"), ["curl -s localhost:2"]);
+    let (out, _) = sb.wib(&["query", "--keywords", "--", "bearer"]);
+    assert_eq!(out, "");
+}
+
+#[test]
+fn query_input_can_come_from_the_environment() {
+    let sb = keyword_sandbox("input-env");
+    let (out, _) = wib_stdin(&sb, &["query", "-0", "--input-env"], "", &[("WIB_INPUT", "git pu")]);
+    assert_eq!(out, "git push origin master\0git pull origin master\0");
+    let (out, _) = wib_stdin(&sb, &["query", "--keywords", "--input-env"], "", &[("WIB_INPUT", "master pull")]);
+    assert_eq!(out, "git pull origin master\n");
+}
+
+#[test]
+fn bad_notice_id_is_refused() {
+    let sb = Sandbox::new("secret-id", &[]);
+    let (_, code) = wib_stdin(&sb, &["record", "--stdin", "--notice-id", "../x"], "ls", &[]);
+    assert_eq!(code, 2);
+}
+
+#[test]
+fn stale_notices_are_cleaned_up() {
+    let sb = Sandbox::new("secret-stale", &[]);
+    record_stdin(&sb, "echo ok", &[]); // creates the data directory
+    let old = sb.data().join("data/secret-notice.1");
+    fs::write(&old, "secret header").unwrap();
+    let two_days_ago = std::time::SystemTime::now() - std::time::Duration::from_secs(2 * DAY as u64);
+    fs::File::options().write(true).open(&old).unwrap().set_modified(two_days_ago).unwrap();
+    let fresh = sb.data().join("data/secret-notice.2");
+    fs::write(&fresh, "secret header").unwrap();
+    record_stdin(&sb, BEARER, &[]);
+    assert!(!old.exists());
+    assert!(fresh.exists());
+}
+
+const GH_SECRET: &str = "QzXvKwPqJmRtYbNcLdHfGsZxWvQpKmJt";
+const DB_SECRET: &str = "Pq7vXw9zKj";
+
+fn secret_sandbox(name: &str) -> Sandbox {
+    let n = now();
+    let gh = format!("export GITHUB_TOKEN=ghp_{GH_SECRET}");
+    let db = format!("psql postgres://app:{DB_SECRET}@db.local/app");
+    Sandbox::new(name, &[(n - 60, gh.as_str()), (n - 50, "git status"), (n - 40, db.as_str())])
+}
+
+#[test]
+fn audit_lists_secrets_without_showing_them() {
+    let sb = secret_sandbox("audit");
+    let (out, code) = sb.wib(&["audit"]);
+    assert_eq!(code, 1);
+    let found: Vec<&str> = out.lines().filter(|l| l.contains("zsh_history:")).collect();
+    assert_eq!(found.len(), 2, "{out}");
+    assert!(found[0].contains("zsh_history:1") && found[0].contains("GitHub token") && found[0].ends_with("GITHUB_TOKEN=ghp_…"));
+    assert!(found[1].contains("zsh_history:3") && found[1].ends_with("postgres://app:…@db.local/app"));
+    for secret in [GH_SECRET, DB_SECRET] {
+        let chars: Vec<char> = secret.chars().collect();
+        for w in chars.windows(3) {
+            let part: String = w.iter().collect();
+            assert!(!out.contains(&part), "output shows {part:?}:\n{out}");
+        }
+    }
+    assert!(out.contains("2 commands look like they contain secrets"));
+}
+
+#[test]
+fn audit_of_a_clean_history_exits_0() {
+    let sb = Sandbox::new("audit-clean", &[(now() - 60, "git status")]);
+    assert_eq!(sb.wib(&["audit"]), ("no secrets found\n".to_string(), 0));
+    assert_eq!(sb.wib(&["audit", "--bogus"]).1, 2);
+}
+
+#[test]
+fn audit_fix_cleans_wibs_files_and_never_touches_zsh_history() {
+    let sb = secret_sandbox("audit-fix");
+    let off = [("WIB_SECRET_GUARD", "0")];
+    record_stdin(&sb, &format!("mysql -u root -p{DB_SECRET}"), &off);
+    record_stdin(&sb, "make build", &off);
+    sb.wib(&["forget", &format!("curl -u me:{DB_SECRET} host")]);
+    sb.wib(&["forget", "git push --force"]);
+    let zsh_before = fs::read(sb.data().join("zsh_history")).unwrap();
+
+    let (out, code) = sb.wib(&["audit", "--fix"]);
+    assert_eq!(code, 1);
+    assert!(out.contains("history.tsv:1") && out.contains("forget:1"), "{out}");
+    assert!(out.contains("removed 1 line from") && out.contains("2 lines in"), "{out}");
+    assert!(!out.contains(DB_SECRET));
+
+    let log = log_lines(&sb);
+    assert_eq!(log.len(), 1);
+    assert!(log[0].ends_with("\tmake build"));
+    let forget = sb.data().join("data/forget");
+    assert_eq!(fs::read_to_string(&forget).unwrap(), "git push --force\n");
+    for file in ["data/history.tsv", "data/forget"] {
+        let mode = fs::metadata(sb.data().join(file)).unwrap().permissions().mode() & 0o777;
+        assert_eq!(mode, 0o600, "{file}");
+    }
+    assert_eq!(fs::read(sb.data().join("zsh_history")).unwrap(), zsh_before);
+    // Only .zsh_history still holds them.
+    let (out, _) = sb.wib(&["audit"]);
+    assert_eq!(out.lines().filter(|l| l.contains("zsh_history:")).count(), 2);
+    assert!(!out.contains("history.tsv:") && !out.contains("forget:"));
+}
+
+#[test]
+fn audit_fix_keeps_forgotten_secrets_hidden_when_the_guard_is_off() {
+    let n = now();
+    let cmd = format!("curl -u me:{DB_SECRET} host");
+    let sb = Sandbox::new("audit-fix-off", &[(n - 60, cmd.as_str())]);
+    sb.wib(&["forget", &cmd]);
+    let off = [("WIB_SECRET_GUARD", "0")];
+    let (out, _) = wib_stdin(&sb, &["audit", "--fix"], "", &off);
+    assert!(out.contains("kept"), "{out}");
+    assert!(fs::read_to_string(sb.data().join("data/forget")).unwrap().contains("curl -u me:"));
+    let (out, _) = wib_stdin(&sb, &["query", "--", "curl"], "", &off);
+    assert_eq!(out, "");
+}
+
+#[test]
+fn forget_prints_the_command_masked() {
+    let sb = Sandbox::new("forget-mask", &[]);
+    let (out, _) = sb.wib(&["forget", &format!("curl -u me:{DB_SECRET} host")]);
+    assert_eq!(out, "forgot: curl -u me:… host\n");
+}
+
+#[test]
+fn audit_fix_while_recording_loses_nothing() {
+    let sb = Sandbox::new("audit-race", &[]);
+    let n = now();
+    record_stdin(&sb, &format!("mysql -p{DB_SECRET}"), &[("WIB_SECRET_GUARD", "0")]);
+    std::thread::scope(|s| {
+        for w in 0..3 {
+            let sb = &sb;
+            s.spawn(move || {
+                for i in 0..60 {
+                    assert_eq!(record(sb, n, &format!("w{w} cmd {i}"), None), 0);
+                }
+            });
+        }
+        let sb = &sb;
+        s.spawn(move || {
+            for _ in 0..20 {
+                sb.wib(&["audit", "--fix"]);
+            }
+        });
+    });
+    let lines = log_lines(&sb);
+    assert_eq!(lines.len(), 180, "every plain command kept, the secret dropped");
+    assert!(!lines.iter().any(|l| l.contains(DB_SECRET)));
+}
+
+#[test]
+fn slots_print_char_offsets_of_the_parts_that_changed() {
+    let n = now();
+    // The sandbox points WIB_ZSH_HISTORY at its own file, as the zsh widget does.
+    let sb = Sandbox::new("slots", &[(n - 60, "docker run -p 9090:80 nginx:1.24"), (n - 50, "kubectl logs pod-b")]);
+    let (out, code) = wib_stdin(&sb, &["slots", "--stdin"], "docker run -p 8080:80 nginx:1.25", &[]);
+    assert_eq!((out.as_str(), code), ("14 21\n22 32\n", 0));
+    let (out, _) = wib_stdin(&sb, &["slots", "--stdin", "--period", "30d"], "kubectl logs pod-á", &[]);
+    assert_eq!(out, "13 18\n");
+    let (out, code) = wib_stdin(&sb, &["slots", "--stdin"], "ls -la", &[]);
+    assert_eq!((out.as_str(), code), ("", 0));
+    // A forgotten run is not a sibling.
+    sb.wib(&["forget", "kubectl logs pod-b"]);
+    let (out, _) = wib_stdin(&sb, &["slots", "--stdin"], "kubectl logs pod-a", &[]);
+    assert_eq!(out, "");
+}
+
+#[test]
+fn suggest_fix_corrects_the_program_name() {
+    let sb = Sandbox::new("suggest-fix", &[]);
+    record_run(&sb, now() - 60, "echo hi", "/", 0);
+    let (out, code) = wib_stdin(&sb, &["suggest-fix", "--stdin", "--cwd", "/"], "ehco hi", &[]);
+    assert_eq!((out.as_str(), code), ("echo hi\n", 0));
+    // Arguments are kept as typed, never corrected.
+    let (out, _) = wib_stdin(&sb, &["suggest-fix", "--stdin"], "ehco  'h i' x", &[]);
+    assert_eq!(out, "echo  'h i' x\n");
+    let (out, code) = wib_stdin(&sb, &["suggest-fix", "--stdin"], "qqqq", &[]);
+    assert_eq!((out.as_str(), code), ("", 0));
+}
+
+#[test]
+fn unforget_brings_a_command_back_and_lists_masked() {
+    let n = now();
+    let sb = Sandbox::new("unforget", &[(n - 60, "git push --force"), (n - 50, "git status")]);
+    assert_eq!(sb.wib(&["unforget"]), ("nothing forgotten\n".to_string(), 0));
+    sb.wib(&["forget", "git push --force"]);
+    sb.wib(&["forget", &format!("export GITHUB_TOKEN=ghp_{GH_SECRET}")]);
+    let (out, code) = sb.wib(&["unforget"]);
+    assert_eq!(code, 0);
+    assert!(out.contains("GITHUB_TOKEN=ghp_…") && out.contains("git push --force"), "{out}");
+    assert!(!out.contains(&GH_SECRET[..3]) && !out.contains(&GH_SECRET[10..13]), "{out}");
+
+    assert_eq!(sb.query("30d", "git"), ["git status"]);
+    assert_eq!(sb.wib(&["unforget", "git", "push", "--force"]), ("unforgot: git push --force\n".to_string(), 0));
+    assert_eq!(sb.query("30d", "git"), ["git status", "git push --force"]);
+    assert_eq!(sb.wib(&["unforget", "--", "git push --force"]), ("not forgotten: git push --force\n".to_string(), 1));
+    let mode = fs::metadata(sb.data().join("data/forget")).unwrap().permissions().mode() & 0o777;
+    assert_eq!(mode, 0o600);
+}
+
+#[test]
+fn forget_and_unforget_at_once_lose_nothing() {
+    let sb = Sandbox::new("unforget-race", &[]);
+    for i in 0..40 {
+        sb.wib(&["forget", &format!("keep {i}")]);
+    }
+    std::thread::scope(|s| {
+        let sb = &sb;
+        s.spawn(move || {
+            for i in 0..40 {
+                sb.wib(&["forget", &format!("new {i}")]);
+            }
+        });
+        s.spawn(move || {
+            for i in 0..40 {
+                sb.wib(&["unforget", &format!("keep {i}")]);
+            }
+        });
+    });
+    let text = fs::read_to_string(sb.data().join("data/forget")).unwrap();
+    let mut lines: Vec<&str> = text.lines().collect();
+    lines.sort_unstable();
+    let mut expected: Vec<String> = (0..40).map(|i| format!("new {i}")).collect();
+    expected.sort_unstable();
+    assert_eq!(lines, expected);
+}
+
+/// `wib doctor` with the shell state the zsh function would pass.
+fn doctor(sb: &Sandbox, zshrc: &str) -> (String, i32) {
+    let home = sb.data().join("home");
+    fs::create_dir_all(&home).unwrap();
+    fs::write(home.join(".zshrc"), zshrc).unwrap();
+    let state = "zsh_version=5.9\nextended_history=on\nKEYTIMEOUT=1\n\
+                 bind:^[[B=_wib_down\nbind:^[OB=_wib_down\nbind:^[[Z=_wib_word\n\
+                 bind:^[=_wib_dismiss\nbind:^G=_wib_dismiss\nbind:^]=_wib_slot\n";
+    let home = home.to_string_lossy().into_owned();
+    wib_stdin(sb, &["doctor"], "", &[("HOME", &home), ("ZDOTDIR", ""), ("_WIB_DOCTOR_STATE", state)])
+}
+
+#[test]
+fn doctor_warns_about_load_order_and_fails_on_a_shared_data_dir() {
+    let sb = Sandbox::new("doctor", &[(now() - 60, "git status")]);
+    let good = "source $ZSH/oh-my-zsh.sh\neval \"$(wib init zsh)\"\n";
+    let (out, code) = doctor(&sb, good);
+    assert_eq!(code, 0, "{out}");
+    assert!(!out.lines().any(|l| l.starts_with("fail") || l.starts_with("warn")), "{out}");
+
+    let (out, code) = doctor(&sb, "eval \"$(wib init zsh)\"\nsource $ZSH/oh-my-zsh.sh\n");
+    assert_eq!(code, 0);
+    assert!(out.lines().any(|l| l.starts_with("warn") && l.contains("oh-my-zsh.sh")), "{out}");
+
+    let data = sb.data().join("data");
+    fs::set_permissions(&data, fs::Permissions::from_mode(0o777)).unwrap();
+    let (out, code) = doctor(&sb, good);
+    assert_eq!(code, 1);
+    assert!(out.contains("fail  ") && out.contains("chmod 700"), "{out}");
+}

@@ -1,18 +1,20 @@
 #!/usr/bin/env zsh
 # Measure `wib query` latency (including process spawn, as the zsh widget pays it)
 # against a copy of a real history file. The original file is never modified.
-# Usage: zsh scripts/bench.sh /path/to/wib [history-file] [runs] [prefix|keywords]
+# Usage: zsh scripts/bench.sh /path/to/wib [history-file] [runs] [prefix|keywords|suggest-fix|slots]
 # `keywords` measures `wib query --keywords` with 1-2 words (3+ chars) of real commands.
+# `suggest-fix` feeds real commands with two letters of the program swapped on stdin,
+# as zsh does after "command not found"; `slots` feeds real commands, as Ctrl-] does.
 # Lookups pass `--cwd "$PWD"` like the zsh widget does; WIB_BENCH_CWD=0 leaves it out
 # to compare against lookups without project ranking.
 emulate -L zsh
 zmodload zsh/datetime
 
-wib=${1:?usage: bench.sh /path/to/wib [history-file] [runs] [prefix|keywords]}
+wib=${1:?usage: bench.sh /path/to/wib [history-file] [runs] [prefix|keywords|suggest-fix|slots]}
 src=${2:-$HOME/.zsh_history}
 integer runs=${3:-500}
 mode=${4:-prefix}
-[[ $mode == (prefix|keywords) ]] || { print -u2 "mode must be prefix or keywords"; exit 2 }
+[[ $mode == (prefix|keywords|suggest-fix|slots) ]] || { print -u2 "mode must be prefix, keywords, suggest-fix or slots"; exit 2 }
 
 tmp=$(mktemp -d)
 trap 'rm -rf $tmp' EXIT
@@ -26,8 +28,16 @@ cmds=( ${(f)"$(LC_ALL=C sed -n 's/^: [0-9]*:[0-9]*;//p' $tmp/zsh_history | LC_AL
 (( ${#cmds} )) || { print -u2 "no commands found in $src"; exit 1 }
 integer i len
 local -a words
+local cmd prog
 for (( i = 1; i <= runs; i++ )); do
-  if [[ $mode == keywords ]]; then
+  cmd=${cmds[RANDOM % ${#cmds} + 1]}
+  if [[ $mode == suggest-fix ]]; then
+    prog=${cmd%% *}
+    (( ${#prog} >= 3 )) && prog=${prog[1]}${prog[3]}${prog[2]}${prog[4,-1]}
+    inputs+=( "$prog${cmd#${cmd%% *}}" )
+  elif [[ $mode == slots ]]; then
+    inputs+=( "$cmd" )
+  elif [[ $mode == keywords ]]; then
     words=( ${(M)${=cmds[RANDOM % ${#cmds} + 1]}:#???*} )
     (( ${#words} )) || words=( ${=cmds[RANDOM % ${#cmds} + 1]} )
     len=$(( RANDOM % 2 + 1 ))
@@ -45,7 +55,11 @@ local -a ms
 float t0
 for input in $inputs; do
   t0=$EPOCHREALTIME
-  "$wib" query -0 --period 30d --limit 8 "${flags[@]}" -- "$input" >/dev/null
+  case $mode in
+    suggest-fix) print -rn -- "$input" | "$wib" suggest-fix --stdin --cwd "$PWD" --period 30d >/dev/null ;;
+    slots)       print -rn -- "$input" | "$wib" slots --stdin --period 30d >/dev/null ;;
+    *)           "$wib" query -0 --period 30d --limit 8 "${flags[@]}" -- "$input" >/dev/null ;;
+  esac
   ms+=( $(( (EPOCHREALTIME - t0) * 1000 )) )
 done
 
