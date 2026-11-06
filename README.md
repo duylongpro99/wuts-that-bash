@@ -39,6 +39,11 @@ Type `dcup` and you get `docker compose up`. Press ↓ and Enter and it runs.
   collapse to one line, and typos that never worked sink to the bottom.
 - 🪶 **Featherweight**: one small Rust binary with zero dependencies, no daemon, no database server.
 - 🔒 **Private by design**: no cloud, no telemetry, the log is owner-only (0600), and it respects `HISTORY_IGNORE`.
+  Commands that hold a token or password are never saved or suggested, and `wib audit` finds old ones.
+- 🩹 **Typos fixed for you**: after "command not found", the next prompt offers the command with the program
+  name corrected (`gti push` → `git push`).
+- 🧩 **Templates**: Ctrl-] jumps to the parts that changed between earlier runs (a port, a tag, a pod name).
+- 🩺 **Self-check**: `wib doctor` finds key-binding, plugin-order and permission problems and says how to fix them.
 - 🤝 **Plays nice**: works with oh-my-zsh, powerlevel10k, zsh-autosuggestions and vi mode.
 - 🔁 **Works on day one**: your existing `~/.zsh_history` powers suggestions immediately.
 
@@ -53,6 +58,9 @@ Not for (yet): bash and fish users. wib needs zsh 5.3 or newer.
 
 Download a prebuilt binary from [Releases](https://github.com/duylongpro99/wuts-that-bash/releases), or see
 [Installation](#installation). Open a new terminal. That's it.
+
+> **New since v0.1.0, coming in the next release:** the secret guard and `wib audit`, Ctrl-] templates,
+> "did you mean", `wib unforget` and `wib doctor`. To use them today, install from source with cargo.
 
 ---
 

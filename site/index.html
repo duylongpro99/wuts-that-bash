@@ -200,6 +200,7 @@ kbd { font: 0.82em/1 var(--mono); padding: 0.2em 0.4em; border: 1px solid var(--
 .points { list-style: none; margin: 24px 0 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 260px), 1fr)); gap: 24px 40px; }
 .points h3 { font-size: 1.4rem; }
 .points p { margin-top: 8px; color: var(--ink-2); }
+.points.two { grid-template-columns: repeat(auto-fit, minmax(min(100%, 380px), 1fr)); }
 
 /* Comparison table: ruled, no boxes */
 .table-scroll { margin-top: 24px; overflow-x: auto; }
@@ -318,6 +319,7 @@ pre code { font-size: 1em; }
   <nav aria-label="Main">
     <ul>
       <li class="opt"><a href="#how">How it matches</a></li>
+      <li class="opt"><a href="#more">What's new</a></li>
       <li class="opt"><a href="#compare">Compare</a></li>
       <li><a href="#install">Install</a></li>
       <li><a href="https://github.com/duylongpro99/wuts-that-bash">GitHub</a></li>
@@ -849,6 +851,30 @@ pre code { font-size: 1em; }
     </ul>
   </section>
 
+  <section class="section" id="more">
+    <h2>Fix a typo, reuse a template, keep secrets out</h2>
+    <p class="lede">Small helpers around the list. None of them adds a process when a command succeeds, and none of them runs anything for you.</p>
+    <ul class="points two">
+      <li>
+        <h3>Did you mean?</h3>
+        <p>Type <code>gti push origin feat-x</code> and get "command not found": the next prompt offers <code>git push origin feat-x</code>. Only the program name is corrected, and only to a program you have run before.</p>
+      </li>
+      <li>
+        <h3>Templates with Ctrl-]</h3>
+        <p>Ctrl-] jumps to the parts of a command that changed between your earlier runs, like a port or an image tag. Type to replace the selected part.</p>
+      </li>
+      <li>
+        <h3>Secrets stay out</h3>
+        <p>Commands holding a token, a password flag, an <code>Authorization:</code> header or <code>user:pass@</code> in a URL are never saved or suggested. <code>wib audit</code> finds old ones in your history, with the values masked.</p>
+      </li>
+      <li>
+        <h3>A checkup</h3>
+        <p><code>wib doctor</code> checks your zsh version, key bindings, plugin load order and data folder, and tells you how to fix what's wrong. <code>wib unforget</code> brings back a command you hid with <code>wib forget</code>.</p>
+      </li>
+    </ul>
+    <p class="note">New since v0.1.0 and coming in the next release. To use them today, <a href="https://github.com/duylongpro99/wuts-that-bash#installation">build from source with cargo</a>.</p>
+  </section>
+
   <section class="section" id="compare">
     <h2>Suggestions that appear on their own</h2>
     <p class="lede">Ctrl-R and fzf make you stop and open a search. wib refines a list with every keystroke, and your keys keep working as before until you press <kbd>↓</kbd>.</p>
@@ -993,6 +1019,7 @@ echo 'eval "$(wib init zsh)"' &gt;&gt; ~/.zshrc</code></pre></div>
       <div data-key="tab"><dt><kbd>Tab</kbd></dt><dd>Fill the selected command without running it</dd></div>
       <div data-key="shift-tab"><dt><kbd>Shift</kbd> <kbd>Tab</kbd></dt><dd>Fill it word by word, to reuse it as a template</dd></div>
       <div data-key="esc"><dt><kbd>Esc</kbd></dt><dd>Hide the list until you type again</dd></div>
+      <div data-key="slot"><dt><kbd>Ctrl</kbd> <kbd>]</kbd></dt><dd>Jump to the next part that changed between earlier runs</dd></div>
       <div data-key="forget"><dt><kbd>wib forget</kbd></dt><dd>Never suggest a wrong or secret command again</dd></div>
     </dl>
     <figure class="side-art presser">
@@ -1187,7 +1214,7 @@ echo 'eval "$(wib init zsh)"' &gt;&gt; ~/.zshrc</code></pre></div>
   // The key list: pressing a wib key anywhere, or tapping a row, shows it on the big keycap.
   const presser = document.getElementById('presser');
   const capText = document.getElementById('presser-key');
-  const capLabels = { down: '↓', enter: 'enter', tab: 'tab', 'shift-tab': 'shift tab', esc: 'esc', forget: 'wib forget' };
+  const capLabels = { down: '↓', enter: 'enter', tab: 'tab', 'shift-tab': 'shift tab', esc: 'esc', slot: 'ctrl ]', forget: 'wib forget' };
   let pressTimer;
   const press = (key) => {
     if (!presser || !capLabels[key]) return;
@@ -1205,6 +1232,7 @@ echo 'eval "$(wib init zsh)"' &gt;&gt; ~/.zshrc</code></pre></div>
   };
   // Only shows what was pressed; never changes what the key does.
   document.addEventListener('keydown', (e) => {
+    if (!e.repeat && e.ctrlKey && e.key === ']') return press('slot');
     if (e.repeat || e.ctrlKey || e.metaKey || e.altKey) return;
     const key = { ArrowDown: 'down', Enter: 'enter', Escape: 'esc', Tab: e.shiftKey ? 'shift-tab' : 'tab' }[e.key];
     if (key) press(key);
