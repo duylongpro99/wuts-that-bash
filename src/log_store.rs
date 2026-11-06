@@ -40,7 +40,7 @@ pub fn env_path(name: &str) -> Option<PathBuf> {
         .map(PathBuf::from)
 }
 
-fn escape(s: &str) -> String {
+pub(crate) fn escape(s: &str) -> String {
     let mut out = String::with_capacity(s.len());
     for c in s.chars() {
         match c {
@@ -54,7 +54,7 @@ fn escape(s: &str) -> String {
     out
 }
 
-fn unescape(s: &str) -> String {
+pub(crate) fn unescape(s: &str) -> String {
     let mut out = String::with_capacity(s.len());
     let mut chars = s.chars();
     while let Some(c) = chars.next() {
@@ -143,8 +143,8 @@ pub fn append(dir: &Path, e: &Entry, keep_since: Option<i64>) -> io::Result<()> 
     }
     f.write_all(line.as_bytes())?;
     drop(f);
-    if let (Some(cutoff), Some(_held)) = (keep_since, &lock) {
-        let _ = compact_if_stale(dir, cutoff);
+    if let (Some(cutoff), Some(held)) = (keep_since, &lock) {
+        let _ = compact_if_stale(dir, cutoff, held);
     }
     Ok(())
 }
@@ -185,10 +185,64 @@ pub fn forget(dir: &Path, cmd: &str) -> io::Result<bool> {
     Ok(true)
 }
 
+/// Remove `cmd` (compared after trimming) from the forget file, keeping every
+/// other line byte for byte. Returns `false` if it was not forgotten. Needs
+/// the lock: without it the file is not rewritten.
+pub fn unforget(dir: &Path, cmd: &str) -> io::Result<bool> {
+    let cmd = cmd.trim();
+    let path = dir.join(FORGET_FILE);
+    if !path.exists() {
+        return Ok(false);
+    }
+    private_dir(dir)?;
+    let held = lock(dir)?;
+    let raw = fs::read(&path)?;
+    let mut kept = Vec::with_capacity(raw.len());
+    let mut found = false;
+    for line in raw.split_inclusive(|&b| b == b'\n') {
+        let text = String::from_utf8_lossy(line);
+        if unescape(text.trim_end_matches('\n')).trim() == cmd {
+            found = true;
+        } else {
+            kept.extend_from_slice(line);
+        }
+    }
+    if found {
+        rewrite_private(dir, FORGET_FILE, &kept, &held)?;
+    }
+    Ok(found)
+}
+
+const NOTICE_PREFIX: &str = "secret-notice.";
+
+/// Tell the shell with process id `id` that its last command was not saved
+/// because it looks like it holds a secret: `<dir>/secret-notice.<id>` holds
+/// the label. Notices older than a day (shells that died) are removed.
+pub fn write_secret_notice(dir: &Path, id: &str, label: &str) -> io::Result<()> {
+    private_dir(dir)?;
+    let mut f = open_regular(
+        OpenOptions::new().create(true).write(true).truncate(true).mode(0o600),
+        &dir.join(format!("{NOTICE_PREFIX}{id}")),
+    )?;
+    if f.metadata()?.permissions().mode() & 0o077 != 0 {
+        f.set_permissions(fs::Permissions::from_mode(0o600))?;
+    }
+    f.write_all(label.as_bytes())?;
+    let day_ago = std::time::SystemTime::now() - std::time::Duration::from_secs(COMPACT_SLACK as u64);
+    for found in fs::read_dir(dir)?.flatten() {
+        let stale = found.file_name().to_str().is_some_and(|n| n.starts_with(NOTICE_PREFIX))
+            && found.metadata().and_then(|m| m.modified()).is_ok_and(|t| t < day_ago);
+        if stale {
+            let _ = fs::remove_file(found.path());
+        }
+    }
+    Ok(())
+}
+
 /// Exclusive lock shared by every writer. It lives in its own file because
 /// compaction replaces `history.tsv`, and a lock on the replaced file would no
 /// longer keep a waiting writer from appending to it. Released on drop.
-fn lock(dir: &Path) -> io::Result<fs::File> {
+pub(crate) fn lock(dir: &Path) -> io::Result<fs::File> {
     let f = open_regular(
         OpenOptions::new().create(true).write(true).truncate(false).mode(0o600),
         &dir.join(LOCK_FILE),
@@ -201,16 +255,21 @@ extern "C" {
     fn geteuid() -> u32;
 }
 
+/// The effective user id of this process.
+pub(crate) fn euid() -> u32 {
+    // SAFETY: geteuid takes no arguments, has no preconditions and cannot fail.
+    unsafe { geteuid() }
+}
+
 /// Create `dir` (0700), or check an existing one before writing into it. Anyone
 /// who can add entries to the directory could swap the log for a symlink to one
 /// of the user's files, so a directory owned by another user or writable by
 /// group/others is refused. Root may still write a user's directory (a root
 /// shell sharing $HOME).
-fn private_dir(dir: &Path) -> io::Result<()> {
+pub(crate) fn private_dir(dir: &Path) -> io::Result<()> {
     fs::DirBuilder::new().recursive(true).mode(0o700).create(dir)?;
     let meta = fs::metadata(dir)?;
-    // SAFETY: geteuid takes no arguments, has no preconditions and cannot fail.
-    let euid = unsafe { geteuid() };
+    let euid = euid();
     if (meta.uid() != euid && euid != 0) || meta.mode() & 0o022 != 0 {
         return Err(io::Error::new(
             io::ErrorKind::PermissionDenied,
@@ -222,7 +281,7 @@ fn private_dir(dir: &Path) -> io::Result<()> {
 
 /// Open `path` only as a regular file, never through a symlink. The check after
 /// opening catches a symlink swapped in between the check and the open.
-fn open_regular(opts: &OpenOptions, path: &Path) -> io::Result<fs::File> {
+pub(crate) fn open_regular(opts: &OpenOptions, path: &Path) -> io::Result<fs::File> {
     let not_regular = || io::Error::new(io::ErrorKind::InvalidInput, format!("{} is not a regular file", path.display()));
     if fs::symlink_metadata(path).is_ok_and(|m| !m.file_type().is_file()) {
         return Err(not_regular());
@@ -240,10 +299,8 @@ fn line_ts(line: &[u8]) -> Option<i64> {
     std::str::from_utf8(&line[..tab]).ok()?.parse().ok()
 }
 
-/// Drop entries older than `cutoff`, keeping the others byte for byte. Callers
-/// hold the log lock. The new log is written beside the old one and renamed
-/// over it, so a concurrent reader sees either the old or the new log.
-fn compact_if_stale(dir: &Path, cutoff: i64) -> io::Result<()> {
+/// Drop entries older than `cutoff`, keeping the others byte for byte.
+fn compact_if_stale(dir: &Path, cutoff: i64, held: &fs::File) -> io::Result<()> {
     let path = dir.join(LOG_FILE);
     if !fs::symlink_metadata(&path)?.file_type().is_file() {
         return Ok(());
@@ -272,19 +329,33 @@ fn compact_if_stale(dir: &Path, cutoff: i64) -> io::Result<()> {
         return Ok(());
     }
 
-    let owner = fs::symlink_metadata(&path)?;
-    let tmp = dir.join(format!("{LOG_FILE}.tmp"));
+    rewrite_private(dir, LOG_FILE, &kept, held)
+}
+
+/// Replace `dir/name` with `bytes`. Needs the lock (`held`), so a writer that
+/// could not take it never rewrites a file and loses another shell's line.
+/// The new file is written beside the old one and renamed over it, so a
+/// concurrent reader sees either the old or the new file.
+pub(crate) fn rewrite_private(dir: &Path, name: &str, bytes: &[u8], _held: &fs::File) -> io::Result<()> {
+    let path = dir.join(name);
+    let owner = fs::symlink_metadata(&path).ok();
+    if owner.as_ref().is_some_and(|m| !m.file_type().is_file()) {
+        return Err(io::Error::new(io::ErrorKind::InvalidInput, format!("{} is not a regular file", path.display())));
+    }
+    let tmp = dir.join(format!("{name}.tmp"));
     // Clear a leftover from a crash (a symlink is removed, not followed), then
     // create the file fresh: `create_new` fails rather than follow a symlink
     // planted in between, so the rewrite never lands in another file.
     let _ = fs::remove_file(&tmp);
     let written = (|| {
         let mut f = OpenOptions::new().write(true).create_new(true).mode(0o600).open(&tmp)?;
-        // Keep the log's owner: a root shell sharing $HOME must not leave the
-        // user a log they can no longer write. Fails, and so skips, for anyone
+        // Keep the file's owner: a root shell sharing $HOME must not leave the
+        // user a file they can no longer write. Fails, and so skips, for anyone
         // but the owner or root.
-        std::os::unix::fs::fchown(&f, Some(owner.uid()), Some(owner.gid()))?;
-        f.write_all(&kept)?;
+        if let Some(owner) = &owner {
+            std::os::unix::fs::fchown(&f, Some(owner.uid()), Some(owner.gid()))?;
+        }
+        f.write_all(bytes)?;
         f.sync_all()?;
         fs::rename(&tmp, &path)
     })();
@@ -479,9 +550,10 @@ mod tests {
         // The oldest entry is past the cutoff, but by less than a day.
         append(&dir, &entry(29 * day + 10, "slightly old"), None).unwrap();
         let before = fs::read_to_string(dir.join(LOG_FILE)).unwrap();
-        compact_if_stale(&dir, 30 * day).unwrap();
+        let held = lock(&dir).unwrap();
+        compact_if_stale(&dir, 30 * day, &held).unwrap();
         assert_eq!(fs::read_to_string(dir.join(LOG_FILE)).unwrap(), before);
-        compact_if_stale(&dir, 31 * day).unwrap();
+        compact_if_stale(&dir, 31 * day, &held).unwrap();
         assert_eq!(fs::read_to_string(dir.join(LOG_FILE)).unwrap(), "");
         fs::remove_dir_all(&dir).unwrap();
     }
@@ -501,6 +573,25 @@ mod tests {
         let file_mode = fs::metadata(dir.join(FORGET_FILE)).unwrap().permissions().mode() & 0o777;
         let dir_mode = fs::metadata(&dir).unwrap().permissions().mode() & 0o777;
         assert_eq!((file_mode, dir_mode), (0o600, 0o700));
+        fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn unforget_removes_one_command_and_keeps_the_rest_verbatim() {
+        let dir = fresh_dir("unforget");
+        assert!(!unforget(&dir, "x").unwrap(), "no forget file");
+        forget(&dir, "git push --force").unwrap();
+        forget(&dir, "a\tb\\c\nd").unwrap();
+        forget(&dir, "rm -rf build").unwrap();
+        let before = fs::read_to_string(dir.join(FORGET_FILE)).unwrap();
+        assert!(unforget(&dir, "  a\tb\\c\nd ").unwrap());
+        assert!(!unforget(&dir, "a\tb\\c\nd").unwrap());
+        let after = fs::read_to_string(dir.join(FORGET_FILE)).unwrap();
+        let expected: String = before.lines().filter(|l| !l.starts_with("a\\t")).map(|l| format!("{l}\n")).collect();
+        assert_eq!(after, expected);
+        assert_eq!(after.lines().count(), 2);
+        let mode = fs::metadata(dir.join(FORGET_FILE)).unwrap().permissions().mode() & 0o777;
+        assert_eq!(mode, 0o600);
         fs::remove_dir_all(&dir).unwrap();
     }
 

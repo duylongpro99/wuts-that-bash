@@ -11,7 +11,10 @@ wib=${1:?usage: run.zsh /path/to/wib [zsh-autosuggestions.zsh]}
 autosuggest=${2:-$HOME/.oh-my-zsh/plugins/zsh-autosuggestions/zsh-autosuggestions.plugin.zsh}
 
 tmp=$(mktemp -d)
-trap 'zpty -d wt 2>/dev/null; rm -rf $tmp' EXIT
+# zpty forks; a forked child running this trap on exit must not remove $tmp.
+zmodload zsh/system
+integer main_pid=$sysparams[pid]
+trap '(( sysparams[pid] == main_pid )) && { zpty -d wt 2>/dev/null; rm -rf $tmp }' EXIT
 integer now=$EPOCHSECONDS failures=0 passes=0
 
 # ---------------------------------------------------------------- harness
@@ -45,6 +48,10 @@ eval "\$('$wib' init zsh)"
 _wib_test_probe() { zle -M "PROBE{{\${BUFFER}|\${_wib_state}|\${#_wib_items}}}" }
 zle -N _wib_test_probe
 for km in main vicmd; bindkey -M \$km '^X^P' _wib_test_probe
+zle() { [[ \$1 == -M ]] && print -r -- "\$2" >> $tmp/messages; builtin zle "\$@" }
+_wib_test_cur() { zle -M "CUR{{\$CURSOR|\$MARK|\$REGION_ACTIVE}}" }
+zle -N _wib_test_cur
+for km in main vicmd; bindkey -M \$km '^X^K' _wib_test_cur
 _wib_test_hl() { zle -M "HL{{\${#region_highlight}|\$KEYMAP}}" }
 zle -N _wib_test_hl
 bindkey '^X^H' _wib_test_hl
@@ -62,7 +69,8 @@ drain() {
   out=''
   # zpty -r -t only returns what is ready right now; poll briefly to collect a full redraw.
   for i in {1..10}; do
-    while zpty -r -t wt chunk; do out+=$chunk; done
+    # One character at a time: reading a line could wait for a newline that never comes.
+    while zpty -r -t wt chunk '?'; do out+=$chunk; done
     sleep 0.03
   done
   out=${out//$'\e'\[[0-9;?]#[a-zA-Z]/}
@@ -76,6 +84,11 @@ probe() {
   REPLY=${p%%\}\}*}
 }
 buffer() { probe; REPLY=${REPLY%%\|*} }
+cursor() {  # REPLY = CURSOR|MARK|REGION_ACTIVE
+  send $'\C-x\C-k'
+  local p=${out##*CUR\{\{}
+  REPLY=${p%%\}\}*}
+}
 check() {  # check <description> <expected> <actual>
   if [[ $2 == "$3" ]]; then
     (( passes++ )); print -r -- "ok   - $1"
@@ -194,6 +207,49 @@ grep -qE 'secret|TOKEN' $tmp/data/history.tsv 2>/dev/null
 check "filtered commands are not recorded" 1 $?
 check "log file is private" 600 "$(stat -f %Lp $tmp/data/history.tsv)"
 
+# ---------------------------------------------------------------- secret guard
+
+# The secret must not match the harness's HISTORY_IGNORE='(*TOKEN*)'.
+secret=Zm9vYmFyYmF6cXV4cXV1eDEyMzQ1Njc4OTBhYmNk
+secret_cmd="curl -s -H 'Authorization: Bearer $secret' localhost:1"
+notice='wib: the last command looks like it contains a secret header'
+
+# The binary sees the command only on stdin, never in its arguments.
+print -r -- "#!/bin/sh
+printf '%s\n' \"\$*\" >> $tmp/spy.log
+exec '$wib' \"\$@\"" > $tmp/spy
+chmod +x $tmp/spy
+reset_line; send "_wib_bin=$tmp/spy"; send $'\r'; more
+send "$secret_cmd"; send $'\r'; more; sleep 0.5; screen=$out
+send 'x'; screen+=$out
+[[ $screen == *"$notice"* ]]; check "secret: the shell is told at the next prompt" 0 $?
+grep -q curl $tmp/data/history.tsv 2>/dev/null
+check "secret: the command is not recorded" 1 $?
+grep -q record $tmp/spy.log && ! grep -q "$secret" $tmp/spy.log
+check "secret: never in the arguments of wib" 0 $?
+reset_line; send 'cur'; probe
+check "secret: a command not recorded is not suggested" "cur|typing|0" "$REPLY"
+reset_line; send 'echo'; send $'\r'; more; sleep 0.3; send 'x'
+[[ $out != *"$notice"* ]]; check "secret: the notice is shown once" 0 $?
+
+reset_line; send 'echo MY_TOKEN=abcdef123456'; send $'\r'; more; sleep 0.5; screen=$out
+send 'x'; screen+=$out
+[[ $screen != *"looks like it contains"* ]]; check "secret: no notice for a HISTORY_IGNORE'd command" 0 $?
+reset_line
+
+# A secret only in .zsh_history is not suggested; another shell's notice is not shown.
+start_shell '' "$secret_cmd" 'curl -s localhost:2'
+send 'cur'; probe
+check "secret: only in .zsh_history, still not suggested" "cur|typing|1" "$REPLY"
+reset_line
+zpty wt2 env HOME=$tmp ZDOTDIR=$tmp TERM=xterm-256color COLUMNS=120 LINES=40 zsh -o no_global_rcs -i
+sleep 1
+send "$secret_cmd"; send $'\r'; more; sleep 0.5
+zpty -w -n wt2 'x'; sleep 0.5
+other=''; while zpty -r -t wt2 chunk '?'; do other+=$chunk; done
+[[ -n $other && $other != *"looks like it contains"* ]]; check "secret: another shell does not show the notice" 0 $?
+zpty -d wt2
+
 # ---------------------------------------------------------------- keyword search
 
 start_shell "path=('${wib:h}' \$path); export WIB_ZSH_HISTORY=$tmp/zsh_history" 'echo docker pull nginx' 'echo pull origin master' 'wib pull,master'
@@ -240,15 +296,77 @@ send 'echo mark'; probe
 check "forget: the command leaves the list" "echo mark|typing|1" "$REPLY"
 reset_line; send 'wib forget gi'; probe
 check "forget: wib forget is not a keyword search" "wib forget gi|typing|0" "$REPLY"
+reset_line; send 'wib unforget echo mark-r2'; send $'\r'; more
+sleep 0.3
+send 'echo mark'; probe
+check "unforget: the command is back in the list" "echo mark|typing|2" "$REPLY"
+reset_line; send 'wib doctor'; send $'\r'; more; sleep 1; more
+[[ $out == *"ok    Down, Shift+Tab, Esc, Ctrl-G and Ctrl-] are bound to wib"* ]]
+check "doctor: reports the keys bound to wib" 0 $?
+[[ $out != *$'\n'"fail "* && $out != *$'\r'"fail "* ]]; check "doctor: no failed check" 0 $?
+reset_line
+
+# ---------------------------------------------------------------- template slots
+
+runs=( 'docker run -p 8080:80 nginx:1.25' 'docker run -p 9090:80 nginx:1.24' )
+start_shell '' "${runs[@]}"
+send 'docker r'; send $'\e[B'; send $'\C-]'; buffer
+check "slots: ctrl-] on a selected row fills it" "${runs[1]}" "$REPLY"
+cursor
+check "slots: cursor at the end of the port, port selected" "21|14|1" "$REPLY"
+send '7070:80'; buffer
+check "slots: typing replaces the whole port" "docker run -p 7070:80 nginx:1.25" "$REPLY"
+send $'\C-]'; cursor
+check "slots: ctrl-] again goes to the tag" "32|22|1" "$REPLY"
+send $'\C-]'; cursor
+check "slots: past the last slot, back to the first" "21|14|1" "$REPLY"
+send $'\C-b'; send $'\C-f'; send '0'; buffer
+check "slots: after moving the cursor, typing just inserts" "docker run -p 7070:800 nginx:1.25" "$REPLY"
+send $'\C-]'; send $'\C-b'; send 'X'; buffer
+check "slots: other edits do not replace the slot" "docker run -p 7070:800 nginx:1.2X5" "$REPLY"
+# zpty may hold back a message line, so messages are read from the log the test shell keeps.
+reset_line; send 'ls -la /tmp'; rm -f $tmp/messages; send $'\C-]'; buffer
+check "slots: no earlier runs leaves the line alone" "ls -la /tmp" "$REPLY"
+grep -q "wib: no earlier runs to compare" $tmp/messages; check "slots: no earlier runs is said" 0 $?
+reset_line
+
+# ---------------------------------------------------------------- did you mean
+
+start_shell ''
+send 'echo hi'; send $'\r'; more; sleep 0.3
+send 'ehco hi'; send $'\r'; more; sleep 0.3; screen=$out; probe
+check "fix: after exit 127 the corrected command is listed" "|typing|1" "$REPLY"
+screen+=$out
+[[ $screen == *"echo hi  ← did you mean?"* ]]; check "fix: the row says did you mean" 0 $?
+send $'\e[B'; send $'\r'; more
+[[ $out == *$'\n'hi* || $out == *$'\r'hi* ]]; check "fix: down, enter runs it" 0 $?
+send 'ehco hi'; send $'\r'; more; sleep 0.3
+send 'x'; probe
+check "fix: typing drops the correction" "x|typing|0" "$REPLY"
+send $'\C-h'; probe
+check "fix: it does not come back on an empty line" "|typing|0" "$REPLY"
+# Any other failure starts no extra process.
+print -r -- "#!/bin/sh
+printf '%s\n' \"\$1\" >> $tmp/spy.log
+exec '$wib' \"\$@\"" > $tmp/spy
+chmod +x $tmp/spy; rm -f $tmp/spy.log
+reset_line; send "_wib_bin=$tmp/spy"; send $'\r'; more
+send 'grep nothing /dev/null'; send $'\r'; more; sleep 0.3; probe
+check "fix: exit 1 gives no correction" "|typing|0" "$REPLY"
+[[ $(grep -c suggest-fix $tmp/spy.log) == 0 ]]; check "fix: exit 1 runs no lookup" 0 $?
 reset_line
 
 # ---------------------------------------------------------------- vi mode
 
-start_shell 'bindkey -v'
+start_shell 'bindkey -v' "${runs[@]}"
 send 'git s'; send $'\e'; send '0'; send 'x'; buffer
 check "vi: esc with list visible still enters command mode" "it s" "$REPLY"
 send $'\e'; send 'cc'; send 'gi'; send $'\e[B'; send $'\e'; send '0'; send 'x'; buffer
 check "vi: esc while navigating also enters command mode" "i" "$REPLY"
+send $'\e'; send 'cc'; send "${runs[1]}"; send $'\C-]'; cursor
+check "vi: ctrl-] in insert mode jumps to a slot" "21|14|1" "$REPLY"
+send $'\e'; send 'cc'; send 'ls -la /tmp'; send $'\C-]'; buffer
+check "vi: ctrl-] without a slot inserts nothing" "ls -la /tmp" "$REPLY"
 
 # ---------------------------------------------------------------- zsh-autosuggestions
 
