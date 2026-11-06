@@ -1,0 +1,19 @@
+before entries in file: 100000  runs: 300  mode: prefix  cwd: on
+before p50: 6.37 ms   p95: 7.30 ms   max: 19.67 ms
+after  entries in file: 100000  runs: 300  mode: prefix  cwd: on
+after  p50: 6.36 ms   p95: 7.11 ms   max: 8.17 ms
+before entries in file: 100000  runs: 300  mode: keywords  cwd: on
+before p50: 6.07 ms   p95: 6.68 ms   max: 7.91 ms
+after  entries in file: 100000  runs: 300  mode: keywords  cwd: on
+after  p50: 6.13 ms   p95: 7.18 ms   max: 8.45 ms
+after  500k/400d entries in file: 500000  runs: 200  mode: suggest-fix  cwd: on
+after  500k/400d p50: 12.11 ms   p95: 12.90 ms   max: 13.67 ms
+after  500k/400d entries in file: 500000  runs: 200  mode: slots  cwd: on
+after  500k/400d p50: 11.32 ms   p95: 12.22 ms   max: 15.91 ms
+# 2026-11-06 re-check, same file for both binaries (gen-history.sh 100000 30: every command inside the 30d period)
+master prefix    p50: 42.63 ms   p95: 51.14 ms
+branch prefix    p50: 43.13 ms   p95: 48.43 ms
+master keywords  p50: 40.46 ms   p95: 44.17 ms
+branch keywords  p50: 40.57 ms   p95: 42.83 ms
+branch 500k/400d suggest-fix  p50: 11.79 ms   p95: 12.36 ms
+branch 500k/400d slots        p50: 10.62 ms   p95: 11.54 ms

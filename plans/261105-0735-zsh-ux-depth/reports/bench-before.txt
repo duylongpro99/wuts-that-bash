@@ -1,0 +1,4 @@
+entries in file: 100000  runs: 300  mode: prefix  cwd: on
+p50: 6.27 ms   p95: 7.50 ms   max: 467.71 ms
+entries in file: 100000  runs: 300  mode: keywords  cwd: on
+p50: 6.10 ms   p95: 6.99 ms   max: 19.82 ms
