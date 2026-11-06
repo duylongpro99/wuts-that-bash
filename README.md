@@ -59,8 +59,8 @@ Not for (yet): bash and fish users. wib needs zsh 5.3 or newer.
 Download a prebuilt binary from [Releases](https://github.com/duylongpro99/wuts-that-bash/releases), or see
 [Installation](#installation). Open a new terminal. That's it.
 
-> **New since v0.1.0, coming in the next release:** the secret guard and `wib audit`, Ctrl-] templates,
-> "did you mean", `wib unforget` and `wib doctor`. To use them today, install from source with cargo.
+> **New in v0.2.0:** the secret guard and `wib audit`, Ctrl-] templates, "did you mean", `wib unforget`
+> and `wib doctor`.
 
 ---
 
@@ -119,7 +119,7 @@ Requires zsh ≥ 5.3.
 (on Linux, use `sha256sum -c` in place of `shasum -a 256 -c`):
 
 ```sh
-curl -fsSL -O https://github.com/duylongpro99/wuts-that-bash/releases/download/v0.1.0/wib-aarch64-apple-darwin.tar.gz -O https://github.com/duylongpro99/wuts-that-bash/releases/download/v0.1.0/wib-aarch64-apple-darwin.tar.gz.sha256
+curl -fsSL -O https://github.com/duylongpro99/wuts-that-bash/releases/download/v0.2.0/wib-aarch64-apple-darwin.tar.gz -O https://github.com/duylongpro99/wuts-that-bash/releases/download/v0.2.0/wib-aarch64-apple-darwin.tar.gz.sha256
 shasum -a 256 -c wib-aarch64-apple-darwin.tar.gz.sha256 &&
   tar -xzf wib-aarch64-apple-darwin.tar.gz &&
   mkdir -p ~/.local/bin && mv wib-aarch64-apple-darwin/wib ~/.local/bin/
@@ -432,7 +432,7 @@ rm -rf ~/.local/share/wib
 
 ## Development
 
-Releases: push a tag matching the `Cargo.toml` version (`git tag v0.1.0 && git push origin v0.1.0`) and
+Releases: push a tag matching the `Cargo.toml` version (`git tag v0.2.0 && git push origin v0.2.0`) and
 `.github/workflows/release.yml` tests, builds the four targets and publishes the GitHub Release. The landing
 page lives in `site/` (static, no build step); its download links name the tag, so update them on each release.
 Deploying it to Cloudflare Pages is covered in [docs/deploy-cloudflare-pages.md](docs/deploy-cloudflare-pages.md).

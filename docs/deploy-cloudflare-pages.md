@@ -20,7 +20,7 @@ available at `site/index_old.html` (served as `/index_old.html`). Cloudflare Pag
 - The release the page links to exists and has its assets. Check with:
 
   ```sh
-  gh release view v0.1.0 --repo duylongpro99/wuts-that-bash --json assets --jq '.assets[].name'
+  gh release view v0.2.0 --repo duylongpro99/wuts-that-bash --json assets --jq '.assets[].name'
   ```
 
   Expect four `wib-<target>.tar.gz` files and four `.sha256` files.
@@ -68,7 +68,7 @@ Replace `wib.pages.dev` with your URL.
 curl -fsS -o /dev/null -w "%{http_code}\n" https://wib.pages.dev/                   # expect 200
 curl -fsS https://wib.pages.dev/ | grep -o 'releases/download/v[0-9.]*' | sort -u    # expect the current tag only
 curl -fsSL -o /dev/null -w "%{http_code}\n" \
-  https://github.com/duylongpro99/wuts-that-bash/releases/download/v0.1.0/wib-aarch64-apple-darwin.tar.gz  # expect 200
+  https://github.com/duylongpro99/wuts-that-bash/releases/download/v0.2.0/wib-aarch64-apple-darwin.tar.gz  # expect 200
 ```
 
 Then open the page in a browser and check that the demo prompt animates, that switching platform
