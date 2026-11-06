@@ -86,3 +86,35 @@ jobs:
             --repo "$GITHUB_REPOSITORY" \
             --title "$GITHUB_REF_NAME" \
             --generate-notes
+
+  # Point the Homebrew tap at this release, so `brew upgrade wib` picks it up.
+  # Pushes with a deploy key that can write only to duylongpro99/homebrew-tap.
+  homebrew:
+    needs: release
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          path: wib
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          path: dist
+          merge-multiple: true
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          repository: duylongpro99/homebrew-tap
+          ssh-key: ${{ secrets.HOMEBREW_TAP_DEPLOY_KEY }}
+          path: tap
+      - name: Update formula
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          wib/scripts/homebrew-formula.sh "$version" dist > tap/Formula/wib.rb
+          cd tap
+          if git diff --quiet; then
+            echo "formula already at $version"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -am "feat: wib $version"
+          git push
