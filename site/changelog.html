@@ -1,0 +1,180 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>wib · changelog</title>
+<meta name="description" content="What changed in each version of wib, the zsh history suggester.">
+<meta name="theme-color" content="#faf9f6">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' fill='%23faf9f6'/%3E%3Cpath d='M8 11l6 5-6 5' stroke='%2321201f' stroke-width='2.6' fill='none' stroke-linecap='round' stroke-linejoin='round'/%3E%3Cpath d='M17 22h7' stroke='%23933323' stroke-width='2.6' stroke-linecap='round'/%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Courier+Prime:ital,wght@1,400&family=Cutive+Mono&family=Nunito+Sans:wght@400;700&display=swap">
+<style>
+/* Same paper-pencil tokens as index.html */
+:root {
+  --paper: #faf9f6;
+  --ink: #21201f;
+  --ink-2: #57534f;
+  --red: #933323;
+  --rule: #dcd8d0;
+  --code: #f2efe8;
+  --serif: "Cutive Mono", "Iowan Old Style", Georgia, serif;
+  --italic: "Courier Prime", "Iowan Old Style", Georgia, serif;
+  --sans: "Nunito Sans", "Avenir Next", "Segoe UI", system-ui, sans-serif;
+  --mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  --gutter: clamp(16px, 4vw, 48px);
+  --measure: 46rem;
+  color-scheme: light;
+}
+* { box-sizing: border-box; border-radius: 0; }
+html { background: var(--paper); color: var(--ink); font: 400 1.0625rem/1.6 var(--sans); -webkit-text-size-adjust: 100%; }
+body { margin: 0; background: var(--paper); }
+main { max-width: 1120px; margin: 0 auto; padding: 24px var(--gutter) 72px; }
+h1, h2, h3 { font-family: var(--serif); font-weight: 400; line-height: 1.15; margin: 0; }
+p { margin: 0; text-wrap: pretty; }
+a { color: var(--red); text-underline-offset: 0.18em; text-decoration-thickness: 1px; }
+a:hover { text-decoration-thickness: 2px; }
+a:focus-visible { outline: 2px solid var(--red); outline-offset: 3px; }
+code { font-family: var(--mono); font-size: 0.88em; background: var(--code); padding: 0.05em 0.3em; overflow-wrap: anywhere; }
+kbd { font: 0.82em/1 var(--mono); padding: 0.2em 0.4em; border: 1px solid var(--ink); background: var(--paper); white-space: nowrap; }
+::selection { background: #ead9cf; }
+
+.mast { max-width: 1120px; margin: 0 auto; padding: 20px var(--gutter) 0; display: flex; align-items: baseline; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
+.brand { font: 1.5rem/1 var(--serif); color: var(--ink); text-decoration: none; }
+.brand b { font-weight: 400; color: var(--red); margin-right: 2px; }
+.mast ul { list-style: none; margin: 0; padding: 0; display: flex; gap: 20px; flex-wrap: wrap; }
+
+.top { max-width: var(--measure); margin-top: 40px; }
+.kicker { font-weight: 700; letter-spacing: 0.06em; color: var(--ink-2); }
+.top h1 { margin-top: 6px; font-size: clamp(2.4rem, 7vw, 4.2rem); }
+.lede { margin-top: 18px; color: var(--ink-2); font-size: 1.125rem; }
+
+/* One ruled block per release: version and date on the left, changes on the right */
+.release { margin-top: 64px; padding-top: 24px; border-top: 1px solid var(--rule); display: grid; grid-template-columns: minmax(0, 16rem) minmax(0, var(--measure)); gap: 12px 40px; }
+.release header h2 { font-size: clamp(1.8rem, 4vw, 2.4rem); }
+.release header h2 a { color: inherit; text-decoration: none; }
+.release header h2 a:hover { text-decoration: underline; }
+.release time, .release .tag { display: block; margin-top: 6px; font-family: var(--italic); font-style: italic; color: var(--ink-2); }
+.release .summary { font-size: 1.125rem; }
+.release h3 { margin-top: 24px; font: 700 0.9rem/1.4 var(--sans); letter-spacing: 0.06em; color: var(--ink-2); text-transform: uppercase; }
+.release ul { margin: 8px 0 0; padding-left: 1.2em; }
+.release li { margin-top: 8px; }
+.release li::marker { color: var(--red); }
+.release .links { margin-top: 20px; display: flex; gap: 8px 24px; flex-wrap: wrap; }
+@media (max-width: 720px) { .release { grid-template-columns: minmax(0, 1fr); margin-top: 48px; } }
+
+.foot { max-width: 1120px; margin: 0 auto; padding: 0 var(--gutter) 48px; }
+.foot > div { padding-top: 20px; border-top: 1px solid var(--rule); color: var(--ink-2); display: flex; justify-content: space-between; gap: 12px 24px; flex-wrap: wrap; }
+.foot ul { list-style: none; margin: 0; padding: 0; display: flex; gap: 20px; flex-wrap: wrap; }
+</style>
+</head>
+<body>
+<header class="mast">
+  <a class="brand" href="index.html" aria-label="wib home"><b>›</b>wib</a>
+  <nav aria-label="Main">
+    <ul>
+      <li><a href="index.html">Home</a></li>
+      <li><a href="index.html#install">Install</a></li>
+      <li><a href="changelog.html" aria-current="page">Changelog</a></li>
+      <li><a href="https://github.com/duylongpro99/wuts-that-bash">GitHub</a></li>
+    </ul>
+  </nav>
+</header>
+
+<main id="top">
+  <header class="top">
+    <p class="kicker">CHANGELOG</p>
+    <h1>What changed, version by version</h1>
+    <p class="lede">New features and fixes in each release of wib, newest first. To upgrade, run <code>brew upgrade wib</code> or download the new binary from <a href="index.html#install">Install</a>.</p>
+  </header>
+
+  <!-- New release: copy one <section class="release"> block, put it first, and keep the id as v<version>. -->
+
+  <section class="release" id="unreleased" aria-labelledby="h-unreleased">
+    <header>
+      <h2 id="h-unreleased"><a href="#unreleased">Unreleased</a></h2>
+      <span class="tag">on master</span>
+    </header>
+    <div>
+      <p class="summary">Install and upgrade with Homebrew.</p>
+      <h3>Added</h3>
+      <ul>
+        <li>A Homebrew tap: <code>brew install duylongpro99/tap/wib</code>, then <code>brew upgrade wib</code> for each new version. The release workflow updates the formula on every tag.</li>
+        <li>Upgrade steps in the README and on the landing page.</li>
+      </ul>
+    </div>
+  </section>
+
+  <section class="release" id="v0.2.0" aria-labelledby="h-v020">
+    <header>
+      <h2 id="h-v020"><a href="#v0.2.0">v0.2.0</a></h2>
+      <time datetime="2026-11-06">6 Nov 2026</time>
+    </header>
+    <div>
+      <p class="summary">Fix a typo, reuse a template, keep secrets out.</p>
+      <h3>Added</h3>
+      <ul>
+        <li><b>Secret guard.</b> Commands holding a token, a password flag, an <code>Authorization:</code> header or <code>user:pass@</code> in a URL are never saved or suggested. The shell that ran one is told once. Set <code>WIB_SECRET_GUARD=0</code> to turn it off.</li>
+        <li><b><code>wib audit [--fix]</code></b> lists secrets already in your history with the values masked, and <code>--fix</code> removes them from wib's own files. It never edits <code>~/.zsh_history</code>.</li>
+        <li><b>Templates with <kbd>Ctrl-]</kbd>.</b> Jump between the parts of a command that changed across earlier runs, like a port or an image tag, and type to replace them.</li>
+        <li><b>Did you mean?</b> After "command not found", the next prompt offers the command with the program name corrected (<code>gti push</code> becomes <code>git push</code>).</li>
+        <li><b><code>wib unforget</code></b> brings back a command hidden with <code>wib forget</code>.</li>
+        <li><b><code>wib doctor</code></b> checks your zsh version, key bindings, plugin load order and data folder, and says how to fix what's wrong.</li>
+      </ul>
+      <h3>Security</h3>
+      <ul>
+        <li>Commands reach wib on stdin or through the environment, never in argv.</li>
+        <li>The log is never written through a symlink.</li>
+        <li>Control characters in text output are shown instead of being sent to the terminal.</li>
+        <li>The release workflow uses a least-privilege token and SHA-pinned actions, and the install steps verify the checksum before unpacking.</li>
+      </ul>
+      <h3>Site</h3>
+      <ul>
+        <li>The landing page was redrawn in a paper-and-pencil style, with a live terminal you can type in.</li>
+      </ul>
+      <p class="links">
+        <a href="https://github.com/duylongpro99/wuts-that-bash/releases/tag/v0.2.0">Release and downloads</a>
+        <a href="https://github.com/duylongpro99/wuts-that-bash/compare/v0.1.0...v0.2.0">All changes since v0.1.0</a>
+      </p>
+    </div>
+  </section>
+
+  <section class="release" id="v0.1.0" aria-labelledby="h-v010">
+    <header>
+      <h2 id="h-v010"><a href="#v0.1.0">v0.1.0</a></h2>
+      <time datetime="2026-11-02">2 Nov 2026</time>
+    </header>
+    <div>
+      <p class="summary">The first release: your zsh history, under the prompt, as you type.</p>
+      <h3>Added</h3>
+      <ul>
+        <li><b>Suggestions under the prompt.</b> Prefix matches first, then fuzzy matching on word starts (<code>dcup</code> finds <code>docker compose up</code>). Duplicates collapse to one line, ranked by how often and how recently you ran them. Your existing <code>~/.zsh_history</code> works from day one.</li>
+        <li><b>Keyword search.</b> <code>wib pull,master</code> lists commands that contain every keyword, in any order. At the prompt, a line starting with <code>wib </code> switches the list to keyword search.</li>
+        <li><b>Project-aware ranking.</b> Among equal matches, commands you ran in the current git project come first, and commands that never succeeded sink below ones that did.</li>
+        <li><b><code>wib forget &lt;command&gt;</code></b> removes a command from every suggestion.</li>
+        <li><b>Prebuilt binaries</b> for macOS (arm64, x86_64) and Linux (x86_64, arm64), with sha256 checksums.</li>
+      </ul>
+      <h3>Performance</h3>
+      <ul>
+        <li>Query cost is bounded by <code>WIB_PERIOD</code> instead of history size: p95 on 500k commands over 7 years dropped from 40.8 ms to 6.2 ms.</li>
+      </ul>
+      <p class="links">
+        <a href="https://github.com/duylongpro99/wuts-that-bash/releases/tag/v0.1.0">Release and downloads</a>
+      </p>
+    </div>
+  </section>
+</main>
+
+<footer class="foot">
+  <div>
+    <span>wib, what is that bash? MIT licensed.</span>
+    <ul>
+      <li><a href="index.html">Home</a></li>
+      <li><a href="https://github.com/duylongpro99/wuts-that-bash">Source</a></li>
+      <li><a href="https://github.com/duylongpro99/wuts-that-bash/releases">Releases</a></li>
+    </ul>
+  </div>
+</footer>
+</body>
+</html>

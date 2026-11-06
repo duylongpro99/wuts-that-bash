@@ -1,6 +1,7 @@
 # Runbook: deploy the landing page to Cloudflare Pages
 
-The landing page is one static file, `site/index.html`, with no build step. The previous design stays
+The landing page is a static file, `site/index.html`, with no build step. The changelog lives next to it
+in `site/changelog.html` (served as `/changelog`) and is linked from the page's masthead and footer. The previous design stays
 available at `site/index_old.html` (served as `/index_old.html`). Cloudflare Pages serves the
 `site/` folder as is. Their download links point at assets of a GitHub Release (see
 `.github/workflows/release.yml`), so a release must exist before the page goes live.
@@ -94,6 +95,9 @@ The page names the tag in its links, so each release needs a page update.
    ```
 
    With Method A, the push deploys. With Method B, run the `wrangler pages deploy` command again.
+
+4. In `site/changelog.html`, rename the "Unreleased" block to the new version (set its `id`, heading, date
+   and release links), and add an empty "Unreleased" block above it for the next changes.
 
 Update the links only after the release exists, or the download buttons return 404.
 
