@@ -687,3 +687,297 @@ fn doctor_warns_about_load_order_and_fails_on_a_shared_data_dir() {
     assert_eq!(code, 1);
     assert!(out.contains("fail  ") && out.contains("chmod 700"), "{out}");
 }
+
+/// Runs wib with ZDOTDIR and the terminal-host variables cleared, then `env` applied.
+fn run_wib(args: &[&str], env: &[(&str, &str)]) -> (String, String, i32) {
+    let out = Command::new(env!("CARGO_BIN_EXE_wib"))
+        .args(args)
+        .env_remove("ZDOTDIR")
+        .env_remove("TERM_PROGRAM")
+        .env_remove("TERMINAL_EMULATOR")
+        .env_remove("_WIB_DOCTOR_STATE")
+        .envs(env.iter().copied())
+        .output()
+        .unwrap();
+    (String::from_utf8(out.stdout).unwrap(), String::from_utf8(out.stderr).unwrap(), out.status.code().unwrap_or(-1))
+}
+
+#[test]
+fn doctor_outside_a_loaded_shell_says_why() {
+    let sb = Sandbox::new("doctor-unloaded", &[]);
+    let home = sb.data().join("home");
+    fs::create_dir_all(&home).unwrap();
+    let home_s = home.to_string_lossy().into_owned();
+    let hist = sb.data().join("zsh_history").to_string_lossy().into_owned();
+    let data = sb.data().join("data").to_string_lossy().into_owned();
+    let run = |zshrc: &str| {
+        fs::write(home.join(".zshrc"), zshrc).unwrap();
+        let env = [("WIB_ZSH_HISTORY", hist.as_str()), ("WIB_DATA_DIR", &data), ("HOME", &home_s), ("TERM_PROGRAM", "vscode")];
+        run_wib(&["doctor"], &env).0
+    };
+    let out = run("ls\neval \"$(wib init zsh)\"\n");
+    let warn = out.lines().find(|l| l.contains("did not come from a shell that loaded it")).unwrap_or_else(|| panic!("{out}"));
+    assert!(warn.starts_with("warn") && warn.contains("~/.zshrc:2"), "{out}");
+    assert!(out.contains("quit the app fully"), "{out}");
+    let out = run("");
+    assert!(out.contains("no `wib init zsh` line") && out.contains("wib setup zsh"), "{out}");
+}
+
+/// A `bin/wib` symlink to the built binary inside the sandbox.
+fn wib_on_path(sb: &Sandbox) -> PathBuf {
+    let bin = sb.data().join("bin");
+    fs::create_dir_all(&bin).unwrap();
+    let link = bin.join("wib");
+    let _ = fs::remove_file(&link);
+    std::os::unix::fs::symlink(env!("CARGO_BIN_EXE_wib"), &link).unwrap();
+    bin
+}
+
+#[test]
+fn init_zsh_uses_the_path_symlink() {
+    let sb = Sandbox::new("init-path", &[]);
+    let bin = wib_on_path(&sb);
+    let path = format!("{}:/usr/bin:/bin", bin.display());
+    let (out, _, code) = run_wib(&["init", "zsh"], &[("PATH", &path)]);
+    assert_eq!(code, 0);
+    assert_eq!(out.lines().next().unwrap(), format!("typeset -g _wib_bin='{}/wib'", bin.display()));
+}
+
+fn has_zsh() -> bool {
+    Command::new("zsh").args(["-f", "-c", "true"]).status().is_ok_and(|s| s.success())
+}
+
+#[test]
+fn init_with_a_missing_binary_says_so_and_the_shell_still_starts() {
+    if !has_zsh() {
+        return;
+    }
+    let sb = Sandbox::new("init-missing", &[]);
+    let (out, _, _) = run_wib(&["init", "zsh"], &[]);
+    let script = out.split_once('\n').unwrap().1;
+    let file = sb.data().join("init.zsh");
+    fs::write(&file, format!("typeset -g _wib_bin='/nonexistent/wib'\n{script}")).unwrap();
+    let out = Command::new("zsh")
+        .args(["-f", "-i", "-c", &format!("source '{}'; print ok", file.display())])
+        .env("HOME", sb.data())
+        .output()
+        .unwrap();
+    let (stdout, stderr) = (String::from_utf8_lossy(&out.stdout), String::from_utf8_lossy(&out.stderr));
+    assert!(stderr.contains("wib: cannot run /nonexistent/wib"), "{stderr}");
+    assert!(stdout.contains("ok"), "{stdout}");
+}
+
+/// `wib setup zsh` with HOME (and optionally ZDOTDIR) inside the sandbox.
+fn setup(sb: &Sandbox, path: &str, zdotdir: Option<&Path>) -> (String, String, i32) {
+    let home = sb.data().join("home");
+    fs::create_dir_all(&home).unwrap();
+    let home = home.to_string_lossy().into_owned();
+    let zdot = zdotdir.map(|z| z.to_string_lossy().into_owned());
+    let mut env = vec![("HOME", home.as_str()), ("PATH", path)];
+    if let Some(z) = &zdot {
+        env.push(("ZDOTDIR", z));
+    }
+    run_wib(&["setup", "zsh"], &env)
+}
+
+#[test]
+fn setup_appends_once_and_keeps_what_was_there() {
+    let sb = Sandbox::new("setup-twice", &[]);
+    let path = format!("{}:/usr/bin:/bin", wib_on_path(&sb).display());
+    let rc = sb.data().join("home/.zshrc");
+    fs::create_dir_all(rc.parent().unwrap()).unwrap();
+    fs::write(&rc, "alias ll='ls -l'").unwrap();
+
+    let (out, _, code) = setup(&sb, &path, None);
+    assert_eq!(code, 0, "{out}");
+    assert!(out.contains("added wib to ~/.zshrc (line 4)") && out.contains("exec zsh"), "{out}");
+    let text = fs::read_to_string(&rc).unwrap();
+    assert!(text.starts_with("alias ll='ls -l'\n\n# >>> wib >>>\n"), "{text}");
+    assert!(!text.contains("export PATH"), "{text}");
+
+    let (out, _, code) = setup(&sb, &path, None);
+    assert_eq!(code, 0);
+    assert!(out.contains("already set up: ~/.zshrc:4"), "{out}");
+    assert_eq!(fs::read_to_string(&rc).unwrap(), text);
+    assert_eq!(text.matches("wib init zsh").count(), 1);
+}
+
+#[test]
+fn setup_adds_path_when_wib_is_not_on_it() {
+    let sb = Sandbox::new("setup-path", &[]);
+    let (out, _, code) = setup(&sb, "/usr/bin:/bin", None);
+    assert_eq!(code, 0, "{out}");
+    assert!(out.contains("(line 3)"), "{out}");
+    let text = fs::read_to_string(sb.data().join("home/.zshrc")).unwrap();
+    let dir = Path::new(env!("CARGO_BIN_EXE_wib")).parent().unwrap().display().to_string();
+    let path_line = format!("export PATH=\"{dir}:$PATH\"");
+    let lines: Vec<&str> = text.lines().collect();
+    assert_eq!(lines, ["# >>> wib >>>", path_line.as_str(), "eval \"$(wib init zsh)\"", "# <<< wib <<<"]);
+}
+
+#[test]
+fn setup_writes_to_zdotdir_and_through_symlinks() {
+    let sb = Sandbox::new("setup-zdot", &[]);
+    let path = format!("{}:/usr/bin:/bin", wib_on_path(&sb).display());
+    let zdot = sb.data().join("zdot");
+    fs::create_dir_all(&zdot).unwrap();
+    let (out, _, code) = setup(&sb, &path, Some(&zdot));
+    assert_eq!(code, 0, "{out}");
+    assert!(fs::read_to_string(zdot.join(".zshrc")).unwrap().contains("wib init zsh"));
+    assert!(!sb.data().join("home/.zshrc").exists());
+
+    let dotfiles = sb.data().join("dotfiles");
+    fs::create_dir_all(&dotfiles).unwrap();
+    fs::write(dotfiles.join("zshrc"), "ls\n").unwrap();
+    let rc = sb.data().join("home/.zshrc");
+    std::os::unix::fs::symlink(dotfiles.join("zshrc"), &rc).unwrap();
+    let (out, _, code) = setup(&sb, &path, None);
+    assert_eq!(code, 0, "{out}");
+    assert!(fs::symlink_metadata(&rc).unwrap().file_type().is_symlink());
+    assert!(fs::read_to_string(dotfiles.join("zshrc")).unwrap().starts_with("ls\n\n# >>> wib >>>"));
+}
+
+#[test]
+fn setup_refuses_what_it_should_not_write() {
+    let sb = Sandbox::new("setup-refuse", &[]);
+    let rc = sb.data().join("home/.zshrc");
+    fs::create_dir_all(&rc).unwrap();
+    let (out, err, code) = setup(&sb, "/usr/bin:/bin", None);
+    assert_eq!(code, 2);
+    assert!(err.contains("eval \"$(wib init zsh)\"") && out.is_empty(), "{err}");
+    assert!(fs::read_dir(&rc).unwrap().next().is_none());
+
+    fs::remove_dir(&rc).unwrap();
+    fs::write(&rc, "# mine\neval \"$(wib init zsh)\"\n").unwrap();
+    let (out, _, code) = setup(&sb, "/usr/bin:/bin", None);
+    assert_eq!(code, 0);
+    assert!(out.contains("already set up: ~/.zshrc:2"), "{out}");
+
+    assert_eq!(run_wib(&["setup"], &[]).2, 2);
+    assert_eq!(run_wib(&["setup", "bash"], &[]).2, 2);
+}
+
+#[test]
+fn setup_leaves_another_wib_on_path_in_charge() {
+    let sb = Sandbox::new("setup-other", &[]);
+    let other = sb.data().join("other");
+    fs::create_dir_all(&other).unwrap();
+    fs::write(other.join("wib"), "#!/bin/sh\n").unwrap();
+    fs::set_permissions(other.join("wib"), fs::Permissions::from_mode(0o755)).unwrap();
+    let path = format!("{}:/usr/bin:/bin", other.display());
+    let (out, _, code) = setup(&sb, &path, None);
+    assert_eq!(code, 0, "{out}");
+    assert!(out.contains(&format!("note: new shells will load {}/wib", other.display())), "{out}");
+    assert!(!fs::read_to_string(sb.data().join("home/.zshrc")).unwrap().contains("export PATH"));
+}
+
+#[test]
+fn setup_finds_zdotdir_set_in_zshenv_without_export() {
+    if !has_zsh() {
+        return;
+    }
+    let sb = Sandbox::new("setup-zshenv", &[]);
+    let path = format!("{}:/usr/bin:/bin", wib_on_path(&sb).display());
+    let zdot = sb.data().join("zdot");
+    fs::create_dir_all(&zdot).unwrap();
+    fs::create_dir_all(sb.data().join("home")).unwrap();
+    fs::write(sb.data().join("home/.zshenv"), format!("ZDOTDIR='{}'\n", zdot.display())).unwrap();
+    let (out, _, code) = setup(&sb, &path, None);
+    assert_eq!(code, 0, "{out}");
+    assert!(fs::read_to_string(zdot.join(".zshrc")).unwrap().contains("wib init zsh"));
+    assert!(!sb.data().join("home/.zshrc").exists());
+}
+
+#[test]
+fn setup_refusal_includes_the_path_line_it_would_add() {
+    let sb = Sandbox::new("setup-refuse-path", &[]);
+    fs::create_dir_all(sb.data().join("home/.zshrc")).unwrap();
+    let (_, err, code) = setup(&sb, "/usr/bin:/bin", None);
+    assert_eq!(code, 2);
+    assert!(err.contains("export PATH=") && err.contains("eval \"$(wib init zsh)\""), "{err}");
+}
+
+#[test]
+fn setup_already_done_succeeds_from_a_directory_it_could_not_quote() {
+    let sb = Sandbox::new("setup-odd-dir", &[]);
+    let odd = sb.data().join("we$ird");
+    fs::create_dir_all(&odd).unwrap();
+    fs::copy(env!("CARGO_BIN_EXE_wib"), odd.join("wib")).unwrap();
+    let home = sb.data().join("home");
+    fs::create_dir_all(&home).unwrap();
+    let rc = home.join(".zshrc");
+    let run = || {
+        let out = Command::new(odd.join("wib"))
+            .args(["setup", "zsh"])
+            .env_remove("ZDOTDIR")
+            .env("HOME", &home)
+            .env("PATH", "/usr/bin:/bin")
+            .output()
+            .unwrap();
+        (String::from_utf8_lossy(&out.stdout).into_owned(), String::from_utf8_lossy(&out.stderr).into_owned(), out.status.code())
+    };
+    fs::write(&rc, "ls\n").unwrap();
+    let (_, err, code) = run();
+    assert_eq!(code, Some(2));
+    assert!(err.contains("need quoting by hand") && err.contains("<dir of wib>"), "{err}");
+    assert_eq!(fs::read_to_string(&rc).unwrap(), "ls\n");
+
+    fs::write(&rc, "eval \"$(wib init zsh)\"\n").unwrap();
+    let (out, err, code) = run();
+    assert_eq!(code, Some(0), "{err}");
+    assert!(out.contains("already set up: ~/.zshrc:1"), "{out}");
+}
+
+#[test]
+fn setup_names_a_missing_zdotdir() {
+    let sb = Sandbox::new("setup-no-zdot", &[]);
+    let path = format!("{}:/usr/bin:/bin", wib_on_path(&sb).display());
+    let zdot = sb.data().join("missing");
+    let (_, err, code) = setup(&sb, &path, Some(&zdot));
+    assert_eq!(code, 2);
+    assert!(err.contains("neither does its directory") && err.contains("ZDOTDIR"), "{err}");
+    assert!(!zdot.exists());
+}
+
+#[test]
+fn doctor_reads_a_zshrc_that_is_not_utf8_and_names_an_unreadable_one() {
+    let sb = Sandbox::new("doctor-rc-bytes", &[]);
+    let home = sb.data().join("home");
+    fs::create_dir_all(&home).unwrap();
+    let rc = home.join(".zshrc");
+    let home_s = home.to_string_lossy().into_owned();
+    let hist = sb.data().join("zsh_history").to_string_lossy().into_owned();
+    let data = sb.data().join("data").to_string_lossy().into_owned();
+    let zdot = format!("ZDOTDIR={home_s}\nzsh_version=5.9");
+    let doctor_in = |state: Option<&str>| {
+        let mut env = vec![("WIB_ZSH_HISTORY", hist.as_str()), ("WIB_DATA_DIR", &data), ("HOME", &home_s)];
+        if let Some(s) = state {
+            env.push(("_WIB_DOCTOR_STATE", s));
+        }
+        run_wib(&["doctor"], &env).0
+    };
+    let doctor = || doctor_in(None);
+
+    fs::write(&rc, b"# caf\xe9\neval \"$(wib init zsh)\"\n").unwrap();
+    let out = doctor();
+    assert!(out.contains("~/.zshrc:2 loads wib"), "{out}");
+
+    fs::remove_file(&rc).unwrap();
+    fs::create_dir(&rc).unwrap();
+    let out = doctor();
+    assert!(out.contains("cannot read ~/.zshrc") && out.contains("a regular file zsh can read"), "{out}");
+    assert!(!out.contains("chmod u+r") && !out.contains("wib setup zsh"), "{out}");
+    let out = doctor_in(Some(&zdot));
+    assert!(out.contains("wib is loaded in this shell") && out.contains("cannot read ~/.zshrc"), "{out}");
+    fs::remove_dir(&rc).unwrap();
+
+    fs::write(&rc, "eval \"$(wib init zsh)\"\n").unwrap();
+    fs::set_permissions(&rc, fs::Permissions::from_mode(0o000)).unwrap();
+    if fs::read(&rc).is_ok() {
+        return; // running as root: permissions do not stop the read
+    }
+    let out = doctor();
+    fs::set_permissions(&rc, fs::Permissions::from_mode(0o600)).unwrap();
+    assert!(out.contains("cannot read ~/.zshrc") && out.contains("chmod u+r"), "{out}");
+    assert!(!out.contains("wib setup zsh"), "{out}");
+}

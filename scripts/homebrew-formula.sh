@@ -58,8 +58,9 @@ class Wib < Formula
 
   def caveats
     <<~TEXT
-      Add this to the end of ~/.zshrc (after oh-my-zsh and other plugins), then open a new terminal:
-        eval "\$(wib init zsh)"
+      Run this once, then open a new terminal (or run \`exec zsh\`):
+        wib setup zsh
+      Terminals inside an app (Orca, VS Code, Cursor, JetBrains) need that app restarted.
       After an upgrade, open a new terminal so zsh loads the new version.
     TEXT
   end

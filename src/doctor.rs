@@ -6,6 +6,7 @@
 
 use crate::entry::parse_period;
 use crate::log_store::{self, FORGET_FILE, LOG_FILE};
+use crate::setup;
 use std::collections::HashMap;
 use std::fs;
 use std::os::unix::fs::MetadataExt;
@@ -52,13 +53,21 @@ pub fn parse_state(text: &str) -> State {
     text.lines().filter_map(|l| l.split_once('=')).map(|(k, v)| (k.to_string(), v.to_string())).collect()
 }
 
-pub fn loaded(state: Option<&State>) -> Check {
-    match state {
-        Some(_) => ok("wib is loaded in this shell"),
-        None => bad(
+/// Whether this shell loaded wib. `init_at` is the line of `rc` that loads it;
+/// when that line exists but the shell did not run it, the terminal's host
+/// most likely started it with an environment from before wib was set up.
+pub fn loaded(state: Option<&State>, init_at: Option<usize>, rc: &str, hint: &str) -> Check {
+    match (state, init_at) {
+        (Some(_), _) => ok("wib is loaded in this shell"),
+        (None, Some(n)) => bad(
             Level::Warn,
-            "not run from a shell with wib loaded, so shell settings are not checked",
-            "add `eval \"$(wib init zsh)\"` at the end of ~/.zshrc, open a new terminal and run `wib doctor` there",
+            format!("{rc}:{n} loads wib, but this run did not come from a shell that loaded it, so shell settings are not checked"),
+            format!("in zsh, run `wib doctor` itself (not `command wib doctor`); if wib is missing there, run `exec zsh`; {hint}"),
+        ),
+        (None, None) => bad(
+            Level::Warn,
+            format!("no `wib init zsh` line in {rc}, so shell settings are not checked"),
+            "run `wib setup zsh`, then `exec zsh`",
         ),
     }
 }
@@ -79,16 +88,11 @@ pub fn load_order(zshrc: Option<&str>, name: &str) -> Check {
     let Some(text) = zshrc else {
         return Check { level: Level::Info, what: format!("{name} not found; load order not checked"), fix: None };
     };
-    let lines: Vec<(usize, &str)> = text
-        .lines()
-        .enumerate()
-        .map(|(i, l)| (i + 1, l.trim()))
-        .filter(|(_, l)| !l.starts_with('#'))
-        .collect();
-    let Some(&(wib_at, _)) = lines.iter().find(|(_, l)| l.contains("wib init zsh")) else {
+    let Some(wib_at) = setup::init_line(text) else {
         return Check { level: Level::Info, what: format!("no `wib init zsh` line in {name}"), fix: None };
     };
-    match lines.iter().find(|(n, l)| *n > wib_at && loads_plugins(l)) {
+    let mut later = text.lines().enumerate().map(|(i, l)| (i + 1, l.trim())).skip(wib_at).filter(|(_, l)| !l.starts_with('#'));
+    match later.find(|(_, l)| loads_plugins(l)) {
         Some((n, l)) => bad(
             Level::Warn,
             format!("{name}:{wib_at} loads wib before {name}:{n} (`{l}`), which may take wib's keys"),
@@ -246,16 +250,29 @@ pub fn run(zsh_history: &Path, period_secs: i64, now: i64) -> bool {
         Some(s) => s.get(name).cloned(),
         None => std::env::var(name).ok(),
     };
-    let mut checks = vec![loaded(state.as_ref())];
-
-    let home = log_store::home();
-    let zdotdir = get("ZDOTDIR").filter(|d| !d.is_empty()).map_or(home.clone(), std::path::PathBuf::from);
-    let zshrc = zdotdir.join(".zshrc");
-    let shown = match zshrc.strip_prefix(&home) {
-        Ok(rest) => format!("~/{}", rest.display()),
-        Err(_) => zshrc.display().to_string(),
+    let zdotdir = if state.is_some() { get("ZDOTDIR") } else { setup::zdotdir() };
+    let zshrc = setup::zshrc_path(zdotdir);
+    let shown = setup::shown(&zshrc);
+    let hint = setup::host_hint(|k| std::env::var(k).ok());
+    let mut checks = match setup::read_rc(&zshrc) {
+        Err(e) if e.kind() != std::io::ErrorKind::NotFound => {
+            let fix = if e.kind() == std::io::ErrorKind::PermissionDenied {
+                format!("make {shown} readable, e.g. `chmod u+r {shown}`")
+            } else {
+                format!("make {shown} a regular file zsh can read")
+            };
+            let unread = bad(Level::Warn, format!("cannot read {shown} ({e}), so its load order is not checked"), fix);
+            match &state {
+                Some(_) => vec![loaded(state.as_ref(), None, &shown, hint), unread],
+                None => vec![unread],
+            }
+        }
+        read => {
+            let text = read.ok();
+            let init_at = text.as_deref().and_then(setup::init_line);
+            vec![loaded(state.as_ref(), init_at, &shown, hint), load_order(text.as_deref(), &shown)]
+        }
     };
-    checks.push(load_order(fs::read_to_string(&zshrc).ok().as_deref(), &shown));
 
     if let Some(s) = &state {
         checks.push(zsh_version(s.get("zsh_version").map_or("", String::as_str)));
@@ -313,6 +330,18 @@ mod tests {
         assert_eq!(load_order(Some("eval \"$(wib init zsh)\"\nzinit light foo\n"), "x").level, Level::Warn);
         assert_eq!(load_order(Some("ls\n"), "x").level, Level::Info);
         assert_eq!(load_order(None, "x").level, Level::Info);
+    }
+
+    #[test]
+    fn loaded_says_why_the_shell_lacks_wib() {
+        let state = State::new();
+        assert_eq!(loaded(Some(&state), None, "~/.zshrc", "h").level, Level::Ok);
+        let c = loaded(None, Some(4), "~/.zshrc", "quit the app fully");
+        assert_eq!(c.level, Level::Warn);
+        assert!(c.what.contains("~/.zshrc:4") && c.what.contains("did not come from a shell that loaded it"), "{}", c.what);
+        assert!(c.fix.as_deref().is_some_and(|f| f.contains("`exec zsh`; quit the app fully")), "{:?}", c.fix);
+        let c = loaded(None, None, "~/.zshrc", "h");
+        assert!(c.what.contains("no `wib init zsh` line") && c.fix.unwrap().contains("wib setup zsh"));
     }
 
     #[test]

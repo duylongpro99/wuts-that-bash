@@ -97,11 +97,17 @@ kbd { font: 0.82em/1 var(--mono); padding: 0.2em 0.4em; border: 1px solid var(--
       <span class="tag">on master</span>
     </header>
     <div>
-      <p class="summary">Install and upgrade with Homebrew.</p>
+      <p class="summary">Install and upgrade with Homebrew, set up zsh with one command.</p>
       <h3>Added</h3>
       <ul>
         <li>A Homebrew tap: <code>brew install duylongpro99/tap/wib</code>, then <code>brew upgrade wib</code> for each new version. The release workflow updates the formula on every tag.</li>
         <li>Upgrade steps in the README and on the landing page.</li>
+        <li><b><code>wib setup zsh</code></b> adds wib to <code>~/.zshrc</code> (or <code>$ZDOTDIR/.zshrc</code>) between <code># &gt;&gt;&gt; wib &gt;&gt;&gt;</code> markers, with a <code>PATH</code> line when wib is not on it yet. Running it again changes nothing, and it never touches a <code>.zshrc</code> you do not own.</li>
+      </ul>
+      <h3>Changed</h3>
+      <ul>
+        <li><code>wib init zsh</code> refers to the binary by its path on <code>PATH</code>, so a cached copy of its output keeps working after an upgrade. If that binary is gone, the shell prints <code>wib: cannot run …</code> instead of silently starting without wib.</li>
+        <li><code>wib doctor</code> run outside a shell with wib loaded says whether <code>.zshrc</code> lacks the init line or the terminal's app (Orca, VS Code, Cursor, JetBrains) needs a restart.</li>
       </ul>
     </div>
   </section>
