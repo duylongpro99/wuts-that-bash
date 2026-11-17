@@ -21,7 +21,7 @@ available at `site/index_old.html` (served as `/index_old.html`). Cloudflare Pag
 - The release the page links to exists and has its assets. Check with:
 
   ```sh
-  gh release view v0.2.0 --repo duylongpro99/wuts-that-bash --json assets --jq '.assets[].name'
+  gh release view v0.3.1 --repo duylongpro99/wuts-that-bash --json assets --jq '.assets[].name'
   ```
 
   Expect four `wib-<target>.tar.gz` files and four `.sha256` files.
@@ -69,7 +69,7 @@ Replace `wib.pages.dev` with your URL.
 curl -fsS -o /dev/null -w "%{http_code}\n" https://wib.pages.dev/                   # expect 200
 curl -fsS https://wib.pages.dev/ | grep -o 'releases/download/v[0-9.]*' | sort -u    # expect the current tag only
 curl -fsSL -o /dev/null -w "%{http_code}\n" \
-  https://github.com/duylongpro99/wuts-that-bash/releases/download/v0.2.0/wib-aarch64-apple-darwin.tar.gz  # expect 200
+  https://github.com/duylongpro99/wuts-that-bash/releases/download/v0.3.1/wib-aarch64-apple-darwin.tar.gz  # expect 200
 ```
 
 Then open the page in a browser and check that the demo prompt animates, that switching platform
@@ -83,15 +83,15 @@ The page names the tag in its links, so each release needs a page update.
    match `Cargo.toml`):
 
    ```sh
-   git tag v0.2.0 && git push origin v0.2.0
+   git tag v0.3.1 && git push origin v0.3.1
    ```
 
-2. Wait for the `release` workflow to finish and confirm the assets with `gh release view v0.2.0`.
+2. Wait for the `release` workflow to finish and confirm the assets with `gh release view v0.3.1`.
 3. Update the links and push:
 
    ```sh
-   sed -i '' 's/v0\.1\.0/v0.2.0/g' site/index.html site/index_old.html   # GNU sed: sed -i 's/.../.../g'
-   git commit -am "docs(site): link release v0.2.0" && git push origin master
+   sed -i '' 's/v0\.3\.0/v0.3.1/g' site/index.html site/index_old.html   # GNU sed: sed -i 's/.../.../g'
+   git commit -am "docs(site): link release v0.3.1" && git push origin master
    ```
 
    With Method A, the push deploys. With Method B, run the `wrangler pages deploy` command again.

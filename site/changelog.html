@@ -97,6 +97,16 @@ kbd { font: 0.82em/1 var(--mono); padding: 0.2em 0.4em; border: 1px solid var(--
       <span class="tag">on master</span>
     </header>
     <div>
+      <p class="summary">Nothing yet.</p>
+    </div>
+  </section>
+
+  <section class="release" id="v0.3.1" aria-labelledby="h-v031">
+    <header>
+      <h2 id="h-v031"><a href="#v0.3.1">v0.3.1</a></h2>
+      <time datetime="2026-11-17">17 Nov 2026</time>
+    </header>
+    <div>
       <p class="summary">Install and upgrade with Homebrew, set up zsh with one command.</p>
       <h3>Added</h3>
       <ul>
@@ -108,7 +118,13 @@ kbd { font: 0.82em/1 var(--mono); padding: 0.2em 0.4em; border: 1px solid var(--
       <ul>
         <li><code>wib init zsh</code> refers to the binary by its path on <code>PATH</code>, so a cached copy of its output keeps working after an upgrade. If that binary is gone, the shell prints <code>wib: cannot run …</code> instead of silently starting without wib.</li>
         <li><code>wib doctor</code> run outside a shell with wib loaded says whether <code>.zshrc</code> lacks the init line or the terminal's app (Orca, VS Code, Cursor, JetBrains) needs a restart.</li>
+        <li><code>setup</code> is now a subcommand, so a keyword search for that word needs <code>wib -- setup</code>.</li>
       </ul>
+      <p class="links">
+        <a href="https://github.com/duylongpro99/wuts-that-bash/releases/tag/v0.3.1">Release and downloads</a>
+        <a href="https://github.com/duylongpro99/wuts-that-bash/compare/v0.2.0...v0.3.1">All changes since v0.2.0</a>
+      </p>
+      <p>v0.3.0 was tagged but never released: a test failed on Linux before anything was built.</p>
     </div>
   </section>
 
