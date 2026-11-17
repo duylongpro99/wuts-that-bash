@@ -962,13 +962,14 @@ sha256sum -c wib-aarch64-unknown-linux-musl.tar.gz.sha256 &amp;&amp;
       </li>
       <li>
         <h3>Hook it into zsh</h3>
-        <p>Add these to the end of <code>~/.zshrc</code>, after oh-my-zsh and other plugins.</p>
-        <div class="code"><pre><code>echo 'export PATH="$HOME/.local/bin:$PATH"' &gt;&gt; ~/.zshrc
-echo 'eval "$(wib init zsh)"' &gt;&gt; ~/.zshrc</code></pre></div>
+        <p>One command adds wib to the end of <code>~/.zshrc</code>, plus <code>~/.local/bin</code> to your <code>PATH</code> if it is missing. Running it again changes nothing.</p>
+        <div class="code"><pre><code>~/.local/bin/wib setup zsh</code></pre></div>
+        <p class="note">Installed with Homebrew? Run <code>wib setup zsh</code>.</p>
       </li>
       <li>
         <h3>Open a new terminal</h3>
-        <p>Type <code>gi</code> and your git commands are already there.</p>
+        <p>Or run <code>exec zsh</code> in this one. Type <code>gi</code> and your git commands are already there.</p>
+        <p class="note">Terminal inside Orca, VS Code, Cursor or a JetBrains IDE? Those apps keep the environment they started with, so quit the app fully and open it again. <code>wib doctor</code> tells you when this is the problem.</p>
       </li>
     </ol>
     </div>

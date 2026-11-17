@@ -1,5 +1,5 @@
 # wib — zsh integration. Load with: eval "$(wib init zsh)"
-# `_wib_bin` is set by `wib init zsh` to the absolute path of the binary.
+# `_wib_bin` is set by `wib init zsh` to the absolute path of the binary (as $PATH spells it).
 #
 # States: typing (list shown, nothing selected), navigating (a row is selected),
 #         hidden (dismissed with Esc / Ctrl-G until the buffer changes).
@@ -10,7 +10,11 @@
 # a row is selected, so Ctrl-R, completion and history keys keep working.
 
 [[ -o interactive ]] || return 0
-[[ -n ${_wib_bin-} && -x $_wib_bin ]] || return 0
+[[ -n ${_wib_bin-} ]] || return 0
+[[ -x $_wib_bin ]] || {
+  print -ru2 -- "wib: cannot run $_wib_bin; if your shell caches \`wib init zsh\` output, clear that cache and open a new terminal"
+  return 0
+}
 (( ${+_wib_loaded} )) && return 0
 typeset -g _wib_loaded=1
 
@@ -117,12 +121,12 @@ _wib_render() {
 }
 
 # `wib <keywords>` on the line: REPLY = the keywords (wib itself is not one).
-# `wib audit|doctor|forget|unforget|query|record|slots|suggest-fix|init ...` runs a subcommand, so it is a plain line.
+# `wib audit|doctor|forget|unforget|query|record|setup|slots|suggest-fix|init ...` runs a subcommand, so it is a plain line.
 _wib_keywords() {
   setopt localoptions extended_glob
   [[ $BUFFER == wib[[:blank:]]* ]] || return 1
   REPLY=${BUFFER#wib[[:blank:]]##}
-  [[ $REPLY != (audit|doctor|forget|unforget|query|record|slots|suggest-fix|init)(|[[:blank:]]*) ]]
+  [[ $REPLY != (audit|doctor|forget|unforget|query|record|setup|slots|suggest-fix|init)(|[[:blank:]]*) ]]
 }
 
 _wib_should_fetch() {

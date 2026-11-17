@@ -36,10 +36,14 @@
 //! - `wib suggest-fix --stdin [--cwd <dir>] [--period 30d]`  Reads a command
 //!   that failed with "command not found" and prints it with the program name
 //!   corrected to one used before, or nothing. Arguments are never changed.
-//! - `wib init zsh`  Prints the zsh integration script for `eval`.
+//! - `wib init zsh`  Prints the zsh integration script for `eval`. The script
+//!   runs the `wib` on `$PATH` that is this binary, so a cached copy keeps
+//!   working after an upgrade.
+//! - `wib setup zsh`  Adds `eval "$(wib init zsh)"` (and `$PATH` when needed) to
+//!   `${ZDOTDIR:-$HOME}/.zshrc` once, then says how to load it.
 //!
 //! Commands that never succeeded rank after equal matches that did. Keywords
-//! that are also subcommand names (audit, doctor, forget, init, query, record, slots, suggest-fix, unforget) need `wib --`.
+//! that are also subcommand names (audit, doctor, forget, init, query, record, setup, slots, suggest-fix, unforget) need `wib --`.
 
 mod audit;
 mod doctor;
@@ -50,6 +54,7 @@ mod matcher;
 mod project;
 mod rank;
 mod secret;
+mod setup;
 mod slots;
 mod zsh_history;
 
@@ -71,7 +76,7 @@ wib - suggest previously used commands from zsh history
 
 Usage:
   wib <keywords>                  e.g. `wib pull,master` or `wib master pull`
-  wib -- <keywords>               when a keyword is also a command name (audit, doctor, forget, init, query, record, slots, suggest-fix, unforget)
+  wib -- <keywords>               when a keyword is also a command name (audit, doctor, forget, init, query, record, setup, slots, suggest-fix, unforget)
   wib query [--period 30d] [--limit 8] [--keywords] [--cwd <dir>] [-0] (--input-env | -- <input>)
   wib forget <command>            never suggest <command> again, e.g. `wib forget 'git push --force'`
   wib unforget [<command>]        list forgotten commands, or suggest <command> again
@@ -79,8 +84,9 @@ Usage:
   wib audit [--fix]               find secrets in your history (shown masked); --fix removes them from wib's files
   wib record --ts <unix> --exit <code> --cwd <dir> [--period 30d] [--notice-id <pid>] (--stdin | -- <command>)
   wib init zsh
+  wib setup zsh                   add wib to ~/.zshrc
 
-Setup: add `eval \"$(wib init zsh)\"` to ~/.zshrc
+Setup: run `wib setup zsh`
 Env:   WIB_PERIOD, WIB_LIMIT, WIB_MIN_CHARS, WIB_ZSH_HISTORY, WIB_DATA_DIR, WIB_SECRET_GUARD";
 
 fn main() -> ExitCode {
@@ -94,6 +100,7 @@ fn main() -> ExitCode {
         Some("query") => done(cmd_query(&args[1..])),
         Some("record") => done(cmd_record(&args[1..])),
         Some("init") => done(cmd_init(&args[1..])),
+        Some("setup") => done(setup::run(&args[1..])),
         Some("forget") => done(cmd_forget(&args[1..])),
         Some("unforget") => cmd_unforget(&args[1..]),
         Some("doctor") => cmd_doctor(&args[1..]),
@@ -434,7 +441,9 @@ fn cmd_doctor(args: &[String]) -> Result<bool, String> {
 fn cmd_init(args: &[String]) -> Result<(), String> {
     match args.first().map(String::as_str) {
         Some("zsh") => {
-            let exe = std::env::current_exe().map_err(|e| format!("cannot locate wib: {e}"))?;
+            let exe = setup::self_on_path()
+                .map_or_else(std::env::current_exe, Ok)
+                .map_err(|e| format!("cannot locate wib: {e}"))?;
             // Single-quote the path for zsh.
             let quoted = exe.to_string_lossy().replace('\'', r"'\''");
             print!("typeset -g _wib_bin='{quoted}'\n{ZSH_SCRIPT}");

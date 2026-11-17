@@ -128,7 +128,8 @@ brew install duylongpro99/tap/wib
 curl -fsSL -O https://github.com/duylongpro99/wuts-that-bash/releases/download/v0.2.0/wib-aarch64-apple-darwin.tar.gz -O https://github.com/duylongpro99/wuts-that-bash/releases/download/v0.2.0/wib-aarch64-apple-darwin.tar.gz.sha256
 shasum -a 256 -c wib-aarch64-apple-darwin.tar.gz.sha256 &&
   tar -xzf wib-aarch64-apple-darwin.tar.gz &&
-  mkdir -p ~/.local/bin && mv wib-aarch64-apple-darwin/wib ~/.local/bin/
+  mkdir -p ~/.local/bin && mv wib-aarch64-apple-darwin/wib ~/.local/bin/ &&
+  ~/.local/bin/wib setup zsh
 ```
 
 If you downloaded the archive with a browser on macOS, clear the quarantine flag once:
@@ -140,15 +141,32 @@ If you downloaded the archive with a browser on macOS, clear the quarantine flag
 cargo install --git https://github.com/duylongpro99/wuts-that-bash
 ```
 
-Then add this to the **end** of `~/.zshrc` (after oh-my-zsh and other plugins). Skip the `PATH` line if
-`~/.local/bin` is already on your `PATH` or you installed with cargo:
+Then, after Homebrew or cargo (the prebuilt one-liner above already does this), run once:
+
+```sh
+wib setup zsh
+```
+
+It appends a block marked `# >>> wib >>>` … `# <<< wib <<<` to the end of `${ZDOTDIR:-$HOME}/.zshrc` (a
+`ZDOTDIR` set in `~/.zshenv` counts), with `eval "$(wib init zsh)"` and, when no `wib` is on your `PATH` yet, an
+`export PATH=…` line before it. Running it
+again changes nothing, and it leaves an existing `wib init zsh` line where it is. It refuses to touch a `.zshrc`
+that is not a regular file you own and prints the lines to add instead.
+
+If you prefer to edit `~/.zshrc` yourself, add this to the **end** (after oh-my-zsh and other plugins). Skip the
+`PATH` line if `~/.local/bin` is already on your `PATH` or you installed with Homebrew or cargo:
 
 ```zsh
 export PATH="$HOME/.local/bin:$PATH"
 eval "$(wib init zsh)"
 ```
 
-Open a new terminal and you're done. Your existing `~/.zsh_history` takes effect from the start.
+Then run `exec zsh` (or open a new terminal) and you're done. Your existing `~/.zsh_history` takes effect from
+the start.
+
+**Terminals inside an app.** Orca, VS Code, Cursor and JetBrains IDEs start their terminals with the shell
+environment the app had when it launched. If a new terminal in one of them still has no wib, quit the app fully
+and open it again. `wib doctor` points this out when `.zshrc` loads wib but the shell has not.
 
 ### Upgrading
 
@@ -159,6 +177,9 @@ Upgrading replaces the binary only. Your data in `~/.local/share/wib` and the li
 - **Cargo:** `cargo install --git https://github.com/duylongpro99/wuts-that-bash --force`
 
 Then open a new terminal: the zsh part of wib is built into the binary and loads when the shell starts.
+`wib init zsh` refers to the binary by its path on `PATH` (such as Homebrew's `bin/wib` link), not by a
+versioned directory, so a shell plugin that caches its output keeps working after an upgrade. If the binary it
+names is gone, the shell prints `wib: cannot run …` instead of silently starting without wib.
 Check with `wib --version` and `wib doctor`. wib never checks for updates itself, because it never uses
 the network; watch the [releases](https://github.com/duylongpro99/wuts-that-bash/releases) to hear about new versions.
 
@@ -313,6 +334,11 @@ Run it in a shell where wib is loaded: there `wib` is a small shell function tha
 own settings (options, key bindings, unexported variables) to `wib doctor`. It runs the binary this shell
 loaded; `command wib` runs whichever `wib` is on `$PATH`.
 
+Run outside such a shell, doctor says why wib is missing: with no `wib init zsh` line in `.zshrc`, the fix is
+`wib setup zsh`; with the line present, either doctor was run as `command wib doctor`, or the shell was started
+before the line was added or by an app that kept an old environment, and the fix is `exec zsh` or restarting
+that app.
+
 ## Configuration
 
 Set environment variables in `~/.zshrc`:
@@ -401,7 +427,8 @@ parent folder, so on a slow network filesystem that check can add a few millisec
 ## Known limitations
 
 - zsh only; bash and fish are not supported yet.
-- No Homebrew formula yet; install a prebuilt binary from Releases or build with cargo.
+- A terminal inside an app (Orca, VS Code, Cursor, JetBrains) may lack wib until the app is restarted; no
+  installer can change an environment the app already holds.
 - No history sync between machines.
 - wib assumes `~/.zsh_history` is written in chronological order (with up to one day of skew allowed, such as
   when `sharehistory` writes a long-running command after newer ones). If you append a history file from
@@ -418,13 +445,14 @@ parent folder, so on a slow network filesystem that check can add a few millisec
 ```sh
 wib pull,master                   # keyword search, any order
 wib -- forget                     # search for text that collides with a subcommand (audit, doctor, forget,
-                                  # init, query, record, slots, suggest-fix, unforget)
+                                  # init, query, record, setup, slots, suggest-fix, unforget)
 wib forget 'git push --force'     # never suggest this command again
 wib unforget                      # list forgotten commands (secrets masked)
 wib unforget 'git push --force'   # suggest it again
 wib audit                         # find secrets in your history (masked); exit 1 if any
 wib audit --fix                   # remove them from wib's own files (never from ~/.zsh_history)
 wib doctor                        # check the installation and say how to fix it
+wib setup zsh                     # add wib to ~/.zshrc (once; safe to repeat)
 wib query --period 7d -- dcup     # print matching commands, one per line
 wib query --cwd "$PWD" -- make    # prefer commands run in this directory's project
 wib query --keywords -- pull,master
@@ -441,7 +469,8 @@ command, so if you change those values (or use a different `HISTFILE`), `export`
 
 ## Uninstall
 
-Remove the `eval "$(wib init zsh)"` line from `~/.zshrc`, then:
+Remove the block between `# >>> wib >>>` and `# <<< wib <<<` (or the `eval "$(wib init zsh)"` line you added
+yourself) from `~/.zshrc`, then:
 
 ```sh
 rm ~/.local/bin/wib        # prebuilt binary; `brew uninstall wib` or `cargo uninstall wib` otherwise
