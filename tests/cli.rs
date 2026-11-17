@@ -902,18 +902,32 @@ fn setup_already_done_succeeds_from_a_directory_it_could_not_quote() {
     let sb = Sandbox::new("setup-odd-dir", &[]);
     let odd = sb.data().join("we$ird");
     fs::create_dir_all(&odd).unwrap();
-    fs::copy(env!("CARGO_BIN_EXE_wib"), odd.join("wib")).unwrap();
+    // A hard link opens nothing for writing. A copy is written through a file
+    // descriptor that a test forking at the same time can inherit, and Linux
+    // then refuses to run the copy (ETXTBSY) until that child execs.
+    if fs::hard_link(env!("CARGO_BIN_EXE_wib"), odd.join("wib")).is_err() {
+        fs::copy(env!("CARGO_BIN_EXE_wib"), odd.join("wib")).unwrap();
+    }
     let home = sb.data().join("home");
     fs::create_dir_all(&home).unwrap();
     let rc = home.join(".zshrc");
     let run = || {
-        let out = Command::new(odd.join("wib"))
-            .args(["setup", "zsh"])
-            .env_remove("ZDOTDIR")
-            .env("HOME", &home)
-            .env("PATH", "/usr/bin:/bin")
-            .output()
-            .unwrap();
+        let mut tries = 0;
+        let out = loop {
+            let res = Command::new(odd.join("wib"))
+                .args(["setup", "zsh"])
+                .env_remove("ZDOTDIR")
+                .env("HOME", &home)
+                .env("PATH", "/usr/bin:/bin")
+                .output();
+            match res {
+                Err(e) if e.kind() == std::io::ErrorKind::ExecutableFileBusy && tries < 50 => {
+                    tries += 1;
+                    std::thread::sleep(std::time::Duration::from_millis(20));
+                }
+                res => break res.unwrap(),
+            }
+        };
         (String::from_utf8_lossy(&out.stdout).into_owned(), String::from_utf8_lossy(&out.stderr).into_owned(), out.status.code())
     };
     fs::write(&rc, "ls\n").unwrap();
