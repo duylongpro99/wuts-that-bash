@@ -1,6 +1,6 @@
 [package]
 name = "wib"
-version = "0.3.1"
+version = "0.3.2"
 edition = "2021"
 rust-version = "1.89"
 description = "Suggest previously used shell commands from zsh history while you type"
