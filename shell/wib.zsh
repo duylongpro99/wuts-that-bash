@@ -155,7 +155,7 @@ _wib_fetch() {
   # The input goes through the environment, which other users cannot read in
   # `ps`, and costs no extra process per keystroke.
   out=$(WIB_INPUT=$input _wib_run query -0 --input-env --cwd "$PWD" --period "${WIB_PERIOD:-30d}" \
-        --limit "${WIB_LIMIT:-8}" "${mode[@]}" 2>/dev/null) || return
+        --limit "${WIB_LIMIT:-3}" "${mode[@]}" 2>/dev/null) || return
   _wib_items=( "${(@0)out}" )
   _wib_items=( "${(@)_wib_items:#}" )
 }

@@ -91,8 +91,8 @@ Download a prebuilt binary from [Releases](https://github.com/duylongpro99/wuts-
 
 - **Suggestions appear on their own.** Ctrl-R, fzf and atuin make you realize you need to search,
   then press a key to open a search screen. wib shows the list as you type and refines it with every keystroke.
-- **See many options at once.** zsh-autosuggestions offers a single grey hint; wib shows up to 8 lines
-  (configurable with `WIB_LIMIT`), so you recognize the right command when you see it, even if you
+- **See many options at once.** zsh-autosuggestions offers a single grey hint; wib shows 3 lines by default
+  (raise it with `WIB_LIMIT`), so you recognize the right command when you see it, even if you
   couldn't recall how to spell it.
 - **Type less, still land on the right command.** Word-initial matching (`dcup`, `gi st`) plus
   Shift+Tab word-by-word fill lets you reuse an old command as a template and edit only the end.
@@ -348,7 +348,7 @@ Set environment variables in `~/.zshrc`:
 | Variable | Default | Meaning |
 |----------|---------|---------|
 | `WIB_PERIOD` | `30d` | Time window to draw commands from: `12h`, `7d`, `2w`, `30d`, … |
-| `WIB_LIMIT` | `8` | Maximum number of lines in the list |
+| `WIB_LIMIT` | `3` | Maximum number of lines in the list |
 | `WIB_MIN_CHARS` | `2` | Minimum characters before the list appears |
 | `WIB_ZSH_HISTORY` | `$HISTFILE` | zsh history file |
 | `WIB_DATA_DIR` | `~/.local/share/wib` | Where wib keeps its own log and the forget list |

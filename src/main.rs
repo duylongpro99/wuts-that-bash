@@ -5,7 +5,7 @@
 //!   Prints commands containing every keyword (comma or space separated, any
 //!   order), best-first. Period and limit come from `WIB_PERIOD` / `WIB_LIMIT`.
 //!   Commands used in the current project (`$PWD`) rank first among equal matches.
-//! - `wib query [--period 30d] [--limit 8] [--keywords] [--cwd <dir>] [-0] (--input-env | -- <input>)`
+//! - `wib query [--period 30d] [--limit 3] [--keywords] [--cwd <dir>] [-0] (--input-env | -- <input>)`
 //!   Prints matching commands best-first. Default output is one command per
 //!   line with embedded newlines shown as `\n` (for humans). With `-0`, each
 //!   command is printed verbatim and terminated by NUL; the zsh widget uses this.
@@ -68,7 +68,7 @@ use std::process::ExitCode;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 const DEFAULT_PERIOD: &str = "30d";
-const DEFAULT_LIMIT: usize = 8;
+const DEFAULT_LIMIT: usize = 3;
 const ZSH_SCRIPT: &str = include_str!("../shell/wib.zsh");
 
 const USAGE: &str = "\
@@ -77,7 +77,7 @@ wib - suggest previously used commands from zsh history
 Usage:
   wib <keywords>                  e.g. `wib pull,master` or `wib master pull`
   wib -- <keywords>               when a keyword is also a command name (audit, doctor, forget, init, query, record, setup, slots, suggest-fix, unforget)
-  wib query [--period 30d] [--limit 8] [--keywords] [--cwd <dir>] [-0] (--input-env | -- <input>)
+  wib query [--period 30d] [--limit 3] [--keywords] [--cwd <dir>] [-0] (--input-env | -- <input>)
   wib forget <command>            never suggest <command> again, e.g. `wib forget 'git push --force'`
   wib unforget [<command>]        list forgotten commands, or suggest <command> again
   wib doctor                      check the installation and say how to fix it

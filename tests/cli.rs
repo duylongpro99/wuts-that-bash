@@ -274,6 +274,16 @@ fn bare_keywords_read_period_and_limit_from_env() {
 }
 
 #[test]
+fn keyword_list_shows_three_lines_unless_wib_limit_says_otherwise() {
+    let n = now();
+    let cmds = ["make build", "make test", "make lint", "make docs", "make release"];
+    let history: Vec<(i64, &str)> = cmds.iter().enumerate().map(|(i, c)| (n - 100 * (i as i64 + 1), *c)).collect();
+    let sb = Sandbox::new("kwdefault", &history);
+    assert_eq!(wib_env(&sb, &["make"], &[]).0.len(), 3);
+    assert_eq!(wib_env(&sb, &["make"], &[("WIB_LIMIT", "5")]).0.len(), 5);
+}
+
+#[test]
 fn missing_keywords_exit_with_2() {
     let sb = keyword_sandbox("kwnone");
     assert_eq!(wib_env(&sb, &["--"], &[]).1, 2);
